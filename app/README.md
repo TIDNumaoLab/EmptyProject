@@ -33,6 +33,33 @@ DB を使う試験(`db` マーカー)は、環境変数 `TEST_DATABASE_URL` に�
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/smdx_test .venv/Scripts/python -m pytest backend/tests -q
 ```
 
+## 起動
+
+### Docker Compose(推奨)
+
+`backend/.env` を作ってから、`app/infra` で起動する。DB(PostgreSQL 16)・本体・画面がまとめて起動し、DB構造は起動時に `alembic upgrade head` で最新になる。
+
+```bash
+docker compose up -d --build
+```
+
+- 画面: http://localhost:5173/login
+- 本体API: http://localhost:8000(Swagger UI は /docs、稼働確認は /health)
+- 試験用のデータベースを作る場合: `docker compose exec db createdb -U postgres smdx_test`(`TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/smdx_test`)
+- データは Docker ボリューム `db-data` に残る。`docker compose down -v` はデータを消すので注意する。
+
+### Docker を使わない場合
+
+PostgreSQL 16 を別に用意し、`backend/.env` の `DATABASE_URL` をその接続先にする。
+
+```bash
+cd backend
+../.venv/Scripts/python -m alembic upgrade head
+../.venv/Scripts/python -m uvicorn --factory smdx_api.main:create_app --reload --port 8000
+```
+
+画面は `frontend` で `npm install` → `npm run dev`(`frontend/.env.example` を参考に `VITE_API_BASE_URL` を設定)。
+
 ## 管理コマンド
 
 画面を持たない初期設定は、`app/backend` をカレントにして管理コマンドで行う。接続先は環境変数 `DATABASE_URL`(未指定なら `postgresql://postgres:postgres@localhost:5432/supermarket_dx`)。

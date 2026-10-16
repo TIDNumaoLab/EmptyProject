@@ -1,0 +1,58 @@
+# 開発環境(db, backend, frontend)。app/infra で実行する:
+#   docker compose up -d --build
+# 評価環境は docker-compose.aws.yml を重ねる(段階6)。
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: supermarket_dx
+      TZ: Asia/Tokyo
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/backend.Dockerfile
+    env_file: ../backend/.env
+    environment:
+      # コンテナ内からは db サービスへ接続する(.env の値を上書き)
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/supermarket_dx
+      TZ: Asia/Tokyo
+    # DB構造は起動のたびにマイグレーションで最新にする。開発中はコードの変更で自動的に再起動する
+    command: sh -c "alembic upgrade head && uvicorn --factory smdx_api.main:create_app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../backend:/app/backend
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: infra/frontend.Dockerfile
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+      TZ: Asia/Tokyo
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../frontend:/app/frontend
+      # コンテナ内でインストールした node_modules を手元のフォルダで隠さない
+      - /app/frontend/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  db-data:

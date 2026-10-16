@@ -1,0 +1,10 @@
+# Docker のビルドコンテキスト(app/)から除くもの
+.venv
+**/__pycache__
+**/.pytest_cache
+**/node_modules
+**/dist
+**/.env
+backend/models/*.joblib
+model_training/output
+sample_data/output
