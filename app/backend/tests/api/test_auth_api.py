@@ -1,0 +1,80 @@
+import pytest
+from fastapi import HTTPException
+
+from smdx_api.api.deps import department_for
+from smdx_api.auth.permissions import Principal
+
+
+def test_me_requires_login(client):
+    res = client.get("/api/me")
+    assert res.status_code == 401
+    assert res.json()["detail"] == "ログインしてください"
+
+
+def test_login_body_is_validated(client):
+    assert client.post("/api/auth/login", json={"login_id": "a"}).status_code == 422
+
+
+@pytest.mark.db
+def test_login_me_logout(client, user_factory):
+    u = user_factory(role="staff", departments=("VEG", "DELI"))
+    res = client.post("/api/auth/login", json={"login_id": u.login_id, "password": "pass1234"})
+    assert res.status_code == 200
+    cookie = res.headers["set-cookie"].lower()
+    assert "httponly" in cookie and "samesite=lax" in cookie and "secure" not in cookie
+    me = client.get("/api/me").json()
+    assert me["role"] == "staff"
+    assert {d["code"] for d in me["departments"]} == {"VEG", "DELI"}
+    assert [d["code"] for d in me["accessible_departments"]] == ["DELI", "VEG"]
+    assert client.post("/api/auth/logout").status_code == 204
+    assert client.get("/api/me").status_code == 401
+
+
+@pytest.mark.db
+def test_manager_accessible_departments_are_all(client, user_factory, login):
+    login(client, user_factory(role="manager", departments=()))
+    me = client.get("/api/me").json()
+    assert me["departments"] == []
+    assert [d["code"] for d in me["accessible_departments"]] == ["DELI", "FISH", "VEG"]
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("login_id,password,active", [
+    ("u1", "bad", True), ("nobody", "pass1234", True), ("u1", "pass1234", False),
+])
+def test_login_failure_same_message(client, user_factory, login_id, password, active):
+    user_factory(login_id="u1", is_active=active)
+    res = client.post("/api/auth/login", json={"login_id": login_id, "password": password})
+    assert res.status_code == 401
+    assert res.json()["detail"] == "ログインIDまたはパスワードが正しくありません。"
+
+
+@pytest.mark.db
+def test_deactivated_user_session_is_rejected(client, user_factory, login, db):
+    u = user_factory()
+    login(client, u)
+    u.is_active = False
+    db.flush()
+    assert client.get("/api/me").status_code == 401
+
+
+@pytest.mark.db
+def test_secure_cookie_when_configured(user_factory, make_client):
+    c = make_client(session_cookie_secure=True)
+    u = user_factory()
+    res = c.post("/api/auth/login", json={"login_id": u.login_id, "password": "pass1234"})
+    assert "secure" in res.headers["set-cookie"].lower()
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("code,status", [("FISH", 403), ("veg", 404), ("NONE", 404)])
+def test_department_for_rejects_other_and_unknown(db, code, status):
+    staff = Principal(1, "a", "staff", frozenset({"VEG"}))
+    with pytest.raises(HTTPException) as e:
+        department_for(code, staff, db)
+    assert e.value.status_code == status
+
+
+@pytest.mark.db
+def test_department_for_returns_own(db):
+    assert department_for("VEG", Principal(1, "a", "staff", frozenset({"VEG"})), db).code == "VEG"

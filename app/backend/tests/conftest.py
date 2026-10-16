@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 
 from smdx_api.api.deps import get_db
 from smdx_api.config import AppConfig
-from smdx_api.db.models import Department, Product
+from smdx_api.auth.passwords import hash_password
+from smdx_api.db.models import Department, Product, User, UserDepartment
 from smdx_api.main import create_app
 
 TEST_SESSION_SECRET = "test-secret-" + "x" * 32
@@ -72,6 +73,66 @@ def app(request, config):
 def client(app):
     """状態を変える API を通すため、既定で CSRF 用ヘッダを付けたクライアント。"""
     return TestClient(app, headers={"X-Requested-With": "smdx"})
+
+
+@pytest.fixture
+def make_client(request, config):
+    """設定の一部を上書きしたアプリのクライアントを作る(db を使う試験では同じセッションを共有する)。"""
+
+    def make(**overrides) -> TestClient:
+        app = create_app(config.model_copy(update=overrides))
+        if "db" in request.fixturenames:
+            session = request.getfixturevalue("db")
+            app.dependency_overrides[get_db] = lambda: session
+        return TestClient(app, headers={"X-Requested-With": "smdx"})
+
+    return make
+
+
+_login_ids = itertools.count(1)
+
+
+@pytest.fixture
+def user_factory(db):
+    """利用者を1件作る。パスワードの既定は pass1234。"""
+
+    def make(
+        login_id: str | None = None,
+        name: str = "試験 太郎",
+        role: str = "staff",
+        departments: tuple[str, ...] = ("VEG",),
+        password: str = "pass1234",
+        is_active: bool = True,
+    ) -> User:
+        u = User(
+            login_id=login_id or f"user{next(_login_ids)}",
+            name=name,
+            password_hash=hash_password(password),
+            role=role,
+            is_active=is_active,
+        )
+        db.add(u)
+        db.flush()
+        for code in departments:
+            dept = db.scalar(select(Department).where(Department.code == code))
+            db.add(UserDepartment(user_id=u.id, department_id=dept.id))
+        db.flush()
+        db.expire(u, ["departments"])
+        return u
+
+    return make
+
+
+@pytest.fixture
+def login():
+    """画面と同じ API でログインする。"""
+
+    def do(client: TestClient, user: User, password: str = "pass1234"):
+        res = client.post("/api/auth/login", json={"login_id": user.login_id, "password": password})
+        assert res.status_code == 200, res.text
+        return res
+
+    return do
 
 
 _codes = itertools.count(1)
