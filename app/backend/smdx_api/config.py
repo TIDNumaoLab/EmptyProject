@@ -23,7 +23,8 @@ class AppConfig(BaseSettings):
     cors_allow_origins: list[str] | str = ["http://localhost:5173"]
     session_secret: str
     session_cookie_secure: bool = False
-    session_max_age_hours: float = 3
+    # 最後の操作からこの時間でログアウトになる(SessionMiddleware が応答ごとに Cookie を出し直す)
+    session_max_age_hours: float = Field(default=3, gt=0)
     tz: str = "Asia/Tokyo"
 
     @field_validator("cors_allow_origins", mode="before")
