@@ -1,0 +1,13 @@
+/* 事務所PCのブラウザ(画面幅1280px以上)向けの共通スタイル */
+body {
+  margin: 0;
+  font-family: "Meiryo", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  color: #222;
+  background: #f7f9fb;
+  min-width: 1280px;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin-top: 0;
+}
