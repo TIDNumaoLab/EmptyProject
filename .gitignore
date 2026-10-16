@@ -1,0 +1,15 @@
+# 既存ファイル・フォルダ(GitHubにpushしない)
+# 先頭の / はプロジェクトルート直下のみを対象にする指定。
+# 今後作成するフォルダの中身には影響しない。
+
+# .claude/settings.json はチーム共有のためコミット対象。個人設定・作業用のみ除外する。
+/.claude/settings.local.json
+/.claude/worktrees/
+/prototype/
+/旧版_20261009
+
+# ルート直下のドキュメント類(Wordの一時ファイル ~$xxx.docx も含む)
+/*.docx
+/*.pdf
+/*.md
+/旧版_20261013
