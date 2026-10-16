@@ -12,6 +12,18 @@
 /.claude/*
 !/.claude/settings.json
 
+# ---- app/ 配下で Git に含めないもの(技術スタック・ファイル構成 2.4) ----
+
+# モデルファイル(学習データ由来・サイズが大きい)
+/app/backend/models/*.joblib
+/app/model_training/output/
+
+# 生成したサンプルデータ(コマンドで再生成できる)
+/app/sample_data/output/
+
+# Jupyter Notebook の自動保存
+.ipynb_checkpoints/
+
 # ---- 一般的な除外(全階層が対象) ----
 
 # 秘密情報・環境変数(.env.example はコミット対象)

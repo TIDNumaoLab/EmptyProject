@@ -11,9 +11,9 @@
       "Bash(git fetch *)",
       "Bash(pytest *)",
       "Bash(python -m pytest *)",
-      "Bash(python tools/check_docs.py *)",
       "Bash(npm run *)",
       "Bash(npm test *)",
+      "Bash(npx vitest *)",
       "Bash(npx tsc *)",
       "Bash(docker compose ps *)",
       "Bash(docker compose logs *)"
@@ -25,9 +25,11 @@
       "Bash(npm install *)",
       "Bash(pip install *)",
       "Bash(alembic *)",
+      "Bash(python -m smdx_api.commands *)",
       "Bash(docker compose down *)"
     ],
     "deny": [
+      "Bash(git push origin master *)",
       "Bash(git push --force *)",
       "Bash(git push -f *)",
       "Bash(git reset --hard *)",
