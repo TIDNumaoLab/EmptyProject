@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smdx-api"
+version = "0.1.0"
+description = "スーパーマーケットDX 本体(FastAPI)"
+requires-python = ">=3.11,<3.12"
+# 版は app/constraints.txt で固定する
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy",
+    "alembic",
+    "psycopg2-binary",
+    "pydantic",
+    "pydantic-settings",
+    "httpx",
+    "argon2-cffi",
+    "itsdangerous",
+    "python-multipart",
+    "tzdata",
+    "pandas",
+    "joblib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["smdx_api*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["db: PostgreSQL が必要な試験(TEST_DATABASE_URL が無ければスキップ)"]
+# Starlette のテストクライアントが出す anyio の非推奨警告(ライブラリ側の問題)は表示しない
+filterwarnings = ["ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning"]
