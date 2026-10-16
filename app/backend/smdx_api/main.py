@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from smdx_api.config import AppConfig, get_config
+from smdx_api.db.session import make_engine, make_session_factory
 from smdx_api.security import CSRF_HEADER, CsrfMiddleware
 
 SESSION_COOKIE_NAME = "smdx_session"
@@ -13,6 +14,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     config = config or get_config()
     app = FastAPI(title="スーパーマーケットDX API")
     app.state.config = config
+    # 接続は最初の利用時に張られる(DB が無くても /health は応答する)
+    app.state.session_factory = make_session_factory(make_engine(config.database_url))
 
     # add_middleware は後に追加したものほど外側になる。外側から CORS → CSRF → セッション の順にする
     app.add_middleware(
