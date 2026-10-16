@@ -1,18 +1,14 @@
-# 既存ファイル・フォルダ(GitHubにpushしない)
-# 先頭の / はプロジェクトルート直下のみを対象にする指定。
-# 今後作成するフォルダの中身には影響しない。
+# ---- ルート直下は許可したものだけをコミット対象にする ----
+# まずルート直下をすべて除外し、! で必要なものだけ除外を解除する。
 
-# .claude/settings.json はチーム共有のためコミット対象。個人設定・作業用のみ除外する。
-/.claude/settings.local.json
-/.claude/worktrees/
-/prototype/
-/旧版_20261009
+/*
+!/app/
+!/.gitignore
 
-# ルート直下のドキュメント類(Wordの一時ファイル ~$xxx.docx も含む)
-/*.docx
-/*.pdf
-/*.md
-/旧版_20261013
+# .claude/ は settings.json(チーム共有設定)だけをコミット対象にする
+!/.claude/
+/.claude/*
+!/.claude/settings.json
 
 # ---- 一般的な除外(全階層が対象) ----
 
