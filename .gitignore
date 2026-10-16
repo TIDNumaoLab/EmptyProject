@@ -3,6 +3,7 @@
 
 /*
 !/app/
+!/設計書/
 !/.gitignore
 
 # .claude/ は settings.json(チーム共有設定)だけをコミット対象にする
