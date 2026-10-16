@@ -32,3 +32,17 @@ DB を使う試験(`db` マーカー)は、環境変数 `TEST_DATABASE_URL` に�
 ```bash
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/smdx_test .venv/Scripts/python -m pytest backend/tests -q
 ```
+
+## 管理コマンド
+
+画面を持たない初期設定は、`app/backend` をカレントにして管理コマンドで行う。接続先は環境変数 `DATABASE_URL`(未指定なら `postgresql://postgres:postgres@localhost:5432/supermarket_dx`)。
+
+### 利用者の登録(create_user)
+
+利用者を登録する画面は無い。役割(`staff`=発注担当者 / `manager`=店長)と所属部門(VEG=青果、FISH=鮮魚、DELI=惣菜。カンマ区切り)を指定する。
+初期パスワードは8文字以上。`--password` を省略すると入力を求められる(シェルの履歴に残さないため省略を推奨)。
+
+```bash
+../.venv/Scripts/python -m smdx_api.commands create_user --login-id tanaka --name 田中 --role staff --departments VEG,FISH
+../.venv/Scripts/python -m smdx_api.commands create_user --login-id tencho --name 店長 --role manager
+```
