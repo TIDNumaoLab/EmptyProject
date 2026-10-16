@@ -45,6 +45,9 @@ def test_stored_values_override_defaults():
     ({"unknown_key": 1}, "unknown_key"),
     ({"deli_production_start": {"11": "11:30"}}, "deli_production_start"),  # 時間帯の開始より後
     ({"weather_stale_hours": "x"}, "weather_stale_hours"),
+    ({"deli_time_bands": [10, 25]}, "deli_time_bands"),           # 時は 0〜23
+    ({"safety_factor.VEG": float("nan")}, "safety_factor.VEG"),    # JSON に保存できない値
+    ({"weather_stale_hours": float("inf")}, "weather_stale_hours"),
 ])
 def test_invalid_changes_raise(changes, key):
     with pytest.raises(SettingsError) as e:

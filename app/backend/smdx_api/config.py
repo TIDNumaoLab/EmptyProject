@@ -3,6 +3,8 @@ from functools import lru_cache
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from smdx_api.db.url import DEFAULT_DATABASE_URL
+
 
 class AppConfig(BaseSettings):
     # model_daily_path などの項目名が pydantic の予約名(model_)と重ならないようにする
@@ -10,7 +12,7 @@ class AppConfig(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore", protected_namespaces=("settings_",)
     )
 
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/supermarket_dx"
+    database_url: str = DEFAULT_DATABASE_URL
     weather_api_base_url: str = "https://api.open-meteo.com/v1/forecast"
     weather_api_archive_url: str = "https://archive-api.open-meteo.com/v1/archive"
     weather_api_timeout_seconds: float = 10
@@ -21,7 +23,8 @@ class AppConfig(BaseSettings):
     # カンマ区切りの文字列で受け、リストに分割する。
     # str との共用型にすると、JSON として読めない値でもエラーにせず検証関数へ渡される
     cors_allow_origins: list[str] | str = ["http://localhost:5173"]
-    session_secret: str
+    # 必須。空や短い鍵ではセッションCookieを偽造できるため、32文字以上を求める
+    session_secret: str = Field(min_length=32)
     session_cookie_secure: bool = False
     # 最後の操作からこの時間でログアウトになる(SessionMiddleware が応答ごとに Cookie を出し直す)
     session_max_age_hours: float = Field(default=3, gt=0)

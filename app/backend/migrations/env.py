@@ -1,9 +1,8 @@
 """Alembic の実行環境。
 
-接続先の優先順: alembic の設定 sqlalchemy.url(試験で指定)→ 環境変数 DATABASE_URL → 既定値。
-SESSION_SECRET を要求しないよう、AppConfig は使わずに環境変数を直接読む。
+接続先の優先順: alembic の設定 sqlalchemy.url(試験で指定)→ 環境変数 DATABASE_URL → .env → 既定値
+(smdx_api.db.url と同じ規則。本体と同じ DB に対して実行する)。
 """
-import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -11,8 +10,7 @@ from sqlalchemy import create_engine
 
 from smdx_api.db.base import Base
 import smdx_api.db.models  # noqa: F401  モデルを Base.metadata に登録する
-
-DEFAULT_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/supermarket_dx"
+from smdx_api.db.url import database_url_from_env
 
 config = context.config
 if config.config_file_name is not None:
@@ -22,7 +20,7 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
-    return config.get_main_option("sqlalchemy.url") or os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
+    return config.get_main_option("sqlalchemy.url") or database_url_from_env()
 
 
 def run_migrations_offline() -> None:

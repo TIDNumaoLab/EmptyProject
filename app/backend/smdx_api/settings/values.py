@@ -4,6 +4,7 @@
 キーだけを JSON で持ち、保存されていないキーは既定値で補う。
 開店・閉店に依存する既定値(発注締め時刻・納品時刻・時間帯の区切り)は、保存済みの営業時間から求める。
 """
+import math
 import re
 from collections.abc import Mapping, Sequence
 from datetime import time
@@ -59,7 +60,8 @@ def _fmt(t: time) -> str:
 
 
 def _positive(key: str, value: Any) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+    # NaN・無限大は JSON に保存できないため受け付けない
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
         raise SettingsError(key, "0より大きい数値を指定してください")
     return float(value)
 
@@ -130,6 +132,8 @@ def _validate_bands(bands: Any, open_: time, close: time) -> list[int]:
     key = "deli_time_bands"
     if not isinstance(bands, list) or not bands or not all(isinstance(b, int) and not isinstance(b, bool) for b in bands):
         raise SettingsError(key, "時間帯の区切りは開始時(整数)の一覧で指定してください")
+    if any(not 0 <= b <= 23 for b in bands):
+        raise SettingsError(key, "時間帯の開始時は 0〜23 で指定してください")
     if any(a >= b for a, b in zip(bands, bands[1:])):
         raise SettingsError(key, "時間帯の区切りは昇順にしてください")
     if bands[0] != open_.hour:

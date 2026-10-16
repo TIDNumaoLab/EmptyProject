@@ -29,3 +29,14 @@ def test_put_settings_saves_and_rejects_invalid(client, user_factory, login):
     assert bad.status_code == 422 and bad.json()["detail"][0]["key"] == "business_hours"
     assert client.get("/api/settings").json()["settings"]["business_hours"] == {"open": "10:00", "close": "20:00"}
     assert client.get("/api/settings").json()["settings"]["safety_factor.VEG"] == 1.2
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("body", [
+    {"deli_time_bands": [10, 25]},
+    {"deli_time_bands": [11, 10, 14]},
+])
+def test_put_invalid_bands_is_422_not_500(client, user_factory, login, body):
+    login(client, user_factory(role="manager", departments=()))
+    res = client.put("/api/settings", json={"settings": body})
+    assert res.status_code == 422 and res.json()["detail"][0]["key"] == "deli_time_bands"

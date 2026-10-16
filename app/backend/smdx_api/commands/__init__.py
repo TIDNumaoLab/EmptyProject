@@ -2,12 +2,10 @@
 
 実行: python -m smdx_api.commands <サブコマンド> ...
 """
-import os
-
 from sqlalchemy.orm import Session
 
-from smdx_api.config import AppConfig
 from smdx_api.db.session import make_engine, make_session_factory
+from smdx_api.db.url import database_url_from_env
 
 
 class CommandError(Exception):
@@ -15,9 +13,5 @@ class CommandError(Exception):
 
 
 def open_session() -> Session:
-    """環境変数 DATABASE_URL の DB に接続する。
-
-    コマンドは SESSION_SECRET を必要としないため、AppConfig 全体は読まずに既定値だけを借りる。
-    """
-    url = os.environ.get("DATABASE_URL") or AppConfig.model_fields["database_url"].default
-    return make_session_factory(make_engine(url))()
+    """本体と同じ接続先(DATABASE_URL → .env → 既定値)の DB に接続する。"""
+    return make_session_factory(make_engine(database_url_from_env()))()

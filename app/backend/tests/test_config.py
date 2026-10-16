@@ -32,3 +32,11 @@ def test_session_secret_is_required(monkeypatch):
     monkeypatch.delenv("SESSION_SECRET", raising=False)
     with pytest.raises(ValidationError):
         AppConfig(_env_file=None)
+
+
+@pytest.mark.parametrize("secret", ["", "short-secret"])
+def test_empty_or_short_session_secret_is_rejected(monkeypatch, secret):
+    # 空の署名鍵で起動すると誰でもセッションCookieを偽造できる(.env.example をそのまま使った場合など)
+    monkeypatch.setenv("SESSION_SECRET", secret)
+    with pytest.raises(ValidationError):
+        AppConfig(_env_file=None)

@@ -19,7 +19,7 @@ py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./backend[dev]"
 
 ## 設定
 
-`backend/.env.example` をコピーして `backend/.env` を作り、`SESSION_SECRET` を設定する。
+`backend/.env.example` をコピーして `backend/.env` を作り、`SESSION_SECRET` を設定する(32文字以上。空のままでは起動しない)。
 
 ## 試験
 
@@ -62,7 +62,7 @@ cd backend
 
 ## 管理コマンド
 
-画面を持たない初期設定は、`app/backend` をカレントにして管理コマンドで行う。接続先は環境変数 `DATABASE_URL`(未指定なら `postgresql://postgres:postgres@localhost:5432/supermarket_dx`)。
+画面を持たない初期設定は、`app/backend` をカレントにして管理コマンドで行う。接続先は本体と同じで、環境変数 `DATABASE_URL` → `backend/.env` の `DATABASE_URL` → 既定値(`postgresql://postgres:postgres@localhost:5432/supermarket_dx`)の順に決まる。マイグレーション(`alembic upgrade head`)も同じ規則。
 
 ### 利用者の登録(create_user)
 
