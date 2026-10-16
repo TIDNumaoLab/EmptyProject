@@ -13,3 +13,47 @@
 /*.pdf
 /*.md
 /旧版_20261013
+
+# ---- 一般的な除外(全階層が対象) ----
+
+# 秘密情報・環境変数(.env.example はコミット対象)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node.js / フロントエンド
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# ローカルDB・ログ
+*.db
+*.sqlite3
+*.log
+
+# ツール作業用
+.superpowers/
+
+# OS・エディタ
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+~$*
