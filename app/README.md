@@ -105,6 +105,7 @@ Open-Meteo の過去実績API から、店舗の位置(`STORE_LATITUDE`・`STORE
 ### サンプルデータの投入(import_sample)
 
 `smdx_sample` で生成したフォルダを一式投入する(商品マスタ・POS・在庫・廃棄・気象の過去実績・行事日・特売)。何度実行しても同じ状態になる。祝日は `import_holidays` で別に入れる。
+calendar.csv にある日付の行事日は置き換えるため、同じ日に画面から登録した行事日は消える(開発・評価用のサンプル投入向けの動作)。
 
 ```bash
 ../.venv/Scripts/python -m smdx_api.commands import_sample --folder ../sample_data/output
