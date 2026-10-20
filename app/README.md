@@ -17,6 +17,18 @@ py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./backend[dev]"
 
 ライブラリのバージョンは `constraints.txt` で固定している。インストールには必ず `-c constraints.txt` を付ける。
 
+## 研究用サンプルデータ(F-20)
+
+実データが無い間の開発・動作確認・バックテスト用。15品(青果6・鮮魚4・惣菜5)、実行日の前日までの400日、乱数シード42で生成する。
+同じ終端日・日数・シードなら同じ内容になる。出力先 `sample_data/output/` は Git 管理外。
+
+```bash
+py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./sample_data[dev]"
+.venv/Scripts/python -m smdx_sample --out sample_data/output --end-date 2026-10-15
+```
+
+出力: 標準取込形式の `products.csv`・`pos_sales.csv`・`inventory.csv`・`waste.csv` と、`weather.csv`・`calendar.csv`・`promotions.csv`・`true_demand.csv`(評価用の真の需要)。
+
 ## 設定
 
 `backend/.env.example` をコピーして `backend/.env` を作り、`SESSION_SECRET` を設定する(32文字以上。空のままでは起動しない)。
