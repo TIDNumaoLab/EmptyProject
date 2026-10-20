@@ -12,7 +12,15 @@ from smdx_sample.export import DEFAULT_DAYS, DEFAULT_SEED, generate
 from smdx_sample.tz import JST
 
 
+def _safe_console() -> None:
+    """表示できない文字は ? に置き換える(Git Bash など標準出力が UTF-8 でない端末で日本語を出しても異常終了しない)。"""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _safe_console()
     parser = argparse.ArgumentParser(prog="python -m smdx_sample", description="研究用サンプルデータを生成する")
     parser.add_argument("--out", required=True, type=Path, help="出力先フォルダ")
     parser.add_argument("--end-date", type=date.fromisoformat, help="期間の終端日(既定は実行日の前日)")

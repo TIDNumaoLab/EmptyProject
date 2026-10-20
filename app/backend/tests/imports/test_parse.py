@@ -110,3 +110,21 @@ def test_inventory_datetime_format_strict():
 def test_waste_row():
     r = parse_csv("waste", b"waste_date,product_code,quantity\n2026-10-15,VEG-001,4\n", CTX)
     assert r.rows == [WasteRow(date(2026, 10, 15), 1, 4)]
+
+
+@pytest.mark.parametrize("line,reason", [
+    ("VEG-001," + "あ" * 65 + ",VEG,1,1,1,,", "値が範囲外です: product_name"),
+    ("V" * 33 + ",にんじん,VEG,1,1,1,,", "値が範囲外です: product_code"),
+    ("VEG-001,にんじん,VEG,1,1,1,1e20,", "値が範囲外です: cost_price"),
+    ("VEG-001,にんじん,VEG,2147483648,1,1,,", "値が範囲外です: order_unit"),
+])
+def test_products_values_must_fit_db_columns(line, reason):
+    ctx = ParseContext(products={}, department_code=None, known_departments={"VEG"})
+    header = "product_code,product_name,department_code,order_unit,lead_time_days,can_carry_over,cost_price,selling_price\n"
+    r = parse_csv("products", (header + line + "\n").encode(), ctx)
+    assert r.rows == [] and r.errors == [RowError(2, reason)]
+
+
+def test_quantity_must_fit_integer_column():
+    r = parse_csv("pos", (POS_HEADER + "2026-10-15,,VEG-001,4900000000\n").encode(), CTX)
+    assert r.errors == [RowError(2, "値が範囲外です: quantity")]

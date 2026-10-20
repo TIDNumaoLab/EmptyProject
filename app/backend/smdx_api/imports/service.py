@@ -9,6 +9,10 @@ from smdx_api.imports.formats import Kind
 from smdx_api.imports.parse import ParseContext, parse_csv
 from smdx_api.imports.save import save_rows
 
+# 取込履歴に残すエラー行の上限(件数は skipped_count に全件残る)。部門を間違えたファイルなどで履歴が肥大しないようにする
+MAX_STORED_ERRORS = 100
+FILE_NAME_MAX = 255
+
 
 def build_context(db: Session, department: Department | None) -> ParseContext:
     products = {
@@ -35,17 +39,17 @@ def run_import(
 ) -> ImportLog:
     """CSV を検証して保存し、取込履歴を残す。ファイル全体が読めなければ FileFormatError(履歴は残さない)。
 
-    imported_count はファイルの有効な行数、skipped_count はスキップした行数。
+    imported_count はファイルの有効な行数、skipped_count はスキップした行数。エラー行は先頭の MAX_STORED_ERRORS 件だけ残す。
     """
     result = parse_csv(kind, data, build_context(db, department))
     save_rows(db, kind, result.rows)
     log = ImportLog(
         kind=kind,
         department_id=department.id if department is not None else None,
-        file_name=file_name,
+        file_name=file_name[:FILE_NAME_MAX],
         imported_count=len(result.rows),
         skipped_count=len(result.errors),
-        errors=[{"row": e.row, "reason": e.reason} for e in result.errors],
+        errors=[{"row": e.row, "reason": e.reason} for e in result.errors[:MAX_STORED_ERRORS]],
         imported_by=user_id,
         finished_at=now,
     )

@@ -85,3 +85,30 @@ def test_history_visibility_for_staff(client, login, user_factory, product_facto
     seen = {(h["kind"], h["department_code"]) for h in client.get("/api/imports").json()}
     assert seen == {("waste", "VEG"), ("products", None)}
     assert client.get("/api/imports", params={"department_code": "FISH"}).status_code == 403
+
+
+def test_import_handler_runs_in_threadpool():
+    # 同期の DB 処理を async の関数で行うと、取込の間 API 全体が止まる(サーバーは1プロセス)
+    import inspect
+
+    from smdx_api.api import routes_imports
+
+    assert not inspect.iscoroutinefunction(routes_imports.import_csv)
+
+
+@pytest.mark.db
+def test_stored_errors_are_capped(client, login, user_factory, product_factory, db):
+    product_factory(code="VEG-001")
+    login(client, user_factory(departments=("VEG",)))
+    rows = "".join(f"2026-10-15,X{i},1\n" for i in range(150))
+    body = _upload(client, "waste", ("waste_date,product_code,quantity\n" + rows).encode(), "VEG").json()
+    assert body["skipped_count"] == 150 and len(body["errors"]) == 100
+    assert body["errors"][0] == {"row": 2, "reason": "未登録の商品コードです: X0"}
+
+
+@pytest.mark.db
+def test_long_file_name_is_truncated(client, login, user_factory, product_factory):
+    product_factory(code="VEG-001")
+    login(client, user_factory(departments=("VEG",)))
+    res = _upload(client, "waste", WASTE_CSV, "VEG", name="あ" * 300 + ".csv")
+    assert res.status_code == 200 and len(res.json()["file_name"]) == 255

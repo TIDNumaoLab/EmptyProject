@@ -70,3 +70,11 @@ def test_manual_inventory_other_department_forbidden(client, login, user_factory
     res = client.put("/api/inventory", json=_body("2026-10-15T19:30:00+09:00", [], department_code="FISH"))
     assert res.status_code == 403
     assert client.get("/api/inventory", params={"department_code": "FISH"}).status_code == 403
+
+
+@pytest.mark.db
+def test_quantity_over_integer_range_is_422(client, login, user_factory, product_factory):
+    product_factory(code="VEG-001")
+    login(client, user_factory(departments=("VEG",)))
+    res = client.put("/api/inventory", json=_body("2026-10-15T19:30:00+09:00", [{"product_code": "VEG-001", "quantity": 4900000000}]))
+    assert res.status_code == 422

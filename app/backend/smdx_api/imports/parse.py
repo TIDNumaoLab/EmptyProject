@@ -20,6 +20,9 @@ _INT_RE = re.compile(r"^-?\d+$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DATETIME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}) ([01]\d|2[0-3]):([0-5]\d)$")
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+# DB の列に収まる範囲(integer、numeric(12,2))。超える値は行ごとスキップする
+INT_MAX = 2_147_483_647
+DECIMAL_MAX = Decimal("9999999999.99")
 
 
 class FileFormatError(Exception):
@@ -93,12 +96,18 @@ class _RowInvalid(Exception):
 
 def _convert(spec: ColumnSpec, raw: str) -> Any:
     bad = _RowInvalid(f"形式が不正です: {spec.name}")
+    out_of_range = _RowInvalid(f"値が範囲外です: {spec.name}")
     if spec.type == "str":
+        if spec.max_length is not None and len(raw) > spec.max_length:
+            raise out_of_range
         return raw
     if spec.type == "int":
         if not _INT_RE.match(raw):
             raise bad
-        return int(raw)
+        value = int(raw)
+        if abs(value) > INT_MAX:
+            raise out_of_range
+        return value
     if spec.type == "decimal":
         try:
             value = Decimal(raw)
@@ -106,6 +115,8 @@ def _convert(spec: ColumnSpec, raw: str) -> Any:
             raise bad from None
         if not value.is_finite():
             raise bad
+        if abs(value) > DECIMAL_MAX:
+            raise out_of_range
         return value
     if spec.type == "date":
         if not _DATE_RE.match(raw):

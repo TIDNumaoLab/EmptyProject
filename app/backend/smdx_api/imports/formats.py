@@ -15,13 +15,15 @@ class ColumnSpec:
     name: str
     type: ColumnType
     required: bool
+    # 文字列の最大長(DB の列の長さ。超えると「値が範囲外です」)
+    max_length: int | None = None
 
 
 COLUMNS: dict[Kind, list[ColumnSpec]] = {
     "products": [
-        ColumnSpec("product_code", "str", True),
-        ColumnSpec("product_name", "str", True),
-        ColumnSpec("department_code", "str", True),
+        ColumnSpec("product_code", "str", True, 32),
+        ColumnSpec("product_name", "str", True, 64),
+        ColumnSpec("department_code", "str", True, 16),
         ColumnSpec("order_unit", "int", True),
         ColumnSpec("lead_time_days", "int", True),
         ColumnSpec("can_carry_over", "bool01", True),

@@ -6,7 +6,8 @@ from smdx_api.schemas.common import JstDatetime
 
 class InventoryItem(BaseModel):
     product_code: str = Field(min_length=1)
-    quantity: int = Field(ge=0)
+    # DB の integer に収まる範囲
+    quantity: int = Field(ge=0, le=2_147_483_647)
 
 
 class InventoryInput(BaseModel):

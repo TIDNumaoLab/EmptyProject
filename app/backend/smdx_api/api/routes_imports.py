@@ -36,7 +36,8 @@ def _out(db: Session, log: ImportLog) -> ImportLogOut:
 
 
 @router.post("/imports/{kind}", response_model=ImportLogOut)
-async def import_csv(
+# 同期の関数にして FastAPI のスレッドプールで実行する(DB 処理の間、他の要求を止めない)
+def import_csv(
     kind: Kind,
     file: UploadFile = File(...),
     department_code: str | None = Form(None),
@@ -53,7 +54,7 @@ async def import_csv(
         if not department_code:
             raise HTTPException(status_code=422, detail="部門を指定してください")
         department = department_for(department_code, p, db)
-    data = await file.read()
+    data = file.file.read()
     try:
         log = run_import(db, kind, file.filename or "upload.csv", data, department, p.user_id, now)
     except FileFormatError as e:

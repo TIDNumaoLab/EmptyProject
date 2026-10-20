@@ -60,3 +60,11 @@ def test_cli(tmp_path, capsys):
     assert main(["--out", str(tmp_path), "--end-date", "2026-10-15", "--days", "14"]) == 0
     assert (tmp_path / "true_demand.csv").exists()
     assert "weather.csv" in capsys.readouterr().out
+
+
+def test_cli_does_not_crash_on_non_utf8_console(tmp_path, monkeypatch):
+    import io
+    import sys
+
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(io.BytesIO(), encoding="cp1252"))
+    assert main(["--out", str(tmp_path), "--end-date", "2026-10-15", "--days", "3"]) == 0
