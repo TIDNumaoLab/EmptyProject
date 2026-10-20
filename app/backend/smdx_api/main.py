@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from smdx_api.api import routes_auth, routes_settings
+from smdx_api.api import routes_auth, routes_imports, routes_settings
 from smdx_api.config import AppConfig, get_config
 from smdx_api.db.session import make_engine, make_session_factory
 from smdx_api.security import CSRF_HEADER, CsrfMiddleware
@@ -42,4 +42,5 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     app.include_router(routes_auth.router)
     app.include_router(routes_settings.router)
+    app.include_router(routes_imports.router)
     return app

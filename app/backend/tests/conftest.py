@@ -11,13 +11,14 @@ import pytest
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from smdx_api.api.deps import get_db
 from smdx_api.config import AppConfig
 from smdx_api.auth.passwords import hash_password
 from smdx_api.db.models import Department, Product, User, UserDepartment
+from smdx_api.db.session import make_engine
 from smdx_api.main import create_app
 
 TEST_SESSION_SECRET = "test-secret-" + "x" * 32
@@ -36,7 +37,8 @@ def db_engine():
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:
         pytest.skip("TEST_DATABASE_URL が未設定のため DB 試験をスキップ")
-    engine = create_engine(url)
+    # 本体と同じ接続設定(タイムゾーン Asia/Tokyo)にする
+    engine = make_engine(url)
     with engine.begin() as conn:
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
