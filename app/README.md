@@ -101,3 +101,11 @@ Open-Meteo の過去実績API から、店舗の位置(`STORE_LATITUDE`・`STORE
 ```bash
 ../.venv/Scripts/python -m smdx_api.commands fetch_weather_actuals --start 2025-09-01 --end 2026-10-15
 ```
+
+### サンプルデータの投入(import_sample)
+
+`smdx_sample` で生成したフォルダを一式投入する(商品マスタ・POS・在庫・廃棄・気象の過去実績・行事日・特売)。何度実行しても同じ状態になる。祝日は `import_holidays` で別に入れる。
+
+```bash
+../.venv/Scripts/python -m smdx_api.commands import_sample --folder ../sample_data/output
+```
