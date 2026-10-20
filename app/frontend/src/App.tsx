@@ -5,7 +5,20 @@ import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { NAV_ITEMS, homePath } from "./auth/routes";
 import Sidebar from "./components/Sidebar";
 import LoginPage from "./pages/LoginPage";
+import ImportsPage from "./pages/ImportsPage";
+import InventoryPage from "./pages/InventoryPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+
+// 作成済みの画面。無い画面は PlaceholderPage(準備中)を出す
+const PAGES: Record<string, () => JSX.Element> = {
+  "/imports": ImportsPage,
+  "/inventory": InventoryPage,
+};
+
+function pageFor(path: string, label: string) {
+  const Page = PAGES[path];
+  return Page ? <Page /> : <PlaceholderPage title={label} />;
+}
 
 // ログイン必須の画面の枠(左にサイドバー)
 function Layout() {
@@ -60,13 +73,7 @@ export default function App() {
                 key={item.path}
                 path={item.path}
                 element={
-                  item.managerOnly ? (
-                    <ManagerOnly>
-                      <PlaceholderPage title={item.label} />
-                    </ManagerOnly>
-                  ) : (
-                    <PlaceholderPage title={item.label} />
-                  )
+                  item.managerOnly ? <ManagerOnly>{pageFor(item.path, item.label)}</ManagerOnly> : pageFor(item.path, item.label)
                 }
               />
             ))}

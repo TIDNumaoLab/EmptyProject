@@ -1,0 +1,75 @@
+/* 業務画面で共通に使う表・フォームの見た目 */
+.toolbar {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  background: #fff;
+}
+
+.table th,
+.table td {
+  border: 1px solid #d5dde3;
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.table th {
+  background: #eef2f5;
+}
+
+.num {
+  text-align: right;
+}
+
+.primary {
+  padding: 8px 16px;
+  background: #2e6e94;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.secondary {
+  padding: 4px 10px;
+  background: #fff;
+  border: 1px solid #9aa9b4;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.notice {
+  background: #e8f4ea;
+  color: #1d5a2a;
+  padding: 10px 16px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.section {
+  margin-top: 32px;
+}
+
+.muted {
+  color: #6b7a85;
+}
