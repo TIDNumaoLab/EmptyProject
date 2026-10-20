@@ -5,14 +5,18 @@ import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { NAV_ITEMS, homePath } from "./auth/routes";
 import Sidebar from "./components/Sidebar";
 import LoginPage from "./pages/LoginPage";
+import CalendarPage from "./pages/CalendarPage";
 import ImportsPage from "./pages/ImportsPage";
 import InventoryPage from "./pages/InventoryPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import PromotionsPage from "./pages/PromotionsPage";
 
 // 作成済みの画面。無い画面は PlaceholderPage(準備中)を出す
 const PAGES: Record<string, () => JSX.Element> = {
   "/imports": ImportsPage,
   "/inventory": InventoryPage,
+  "/promotions": PromotionsPage,
+  "/calendar": CalendarPage,
 };
 
 function pageFor(path: string, label: string) {
