@@ -4,6 +4,13 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from smdx_api.db.url import DEFAULT_DATABASE_URL
+from smdx_api.weather_client.config import (
+    DEFAULT_ARCHIVE_URL,
+    DEFAULT_FORECAST_URL,
+    DEFAULT_LATITUDE,
+    DEFAULT_LONGITUDE,
+    DEFAULT_TIMEOUT_SECONDS,
+)
 
 
 class AppConfig(BaseSettings):
@@ -13,11 +20,11 @@ class AppConfig(BaseSettings):
     )
 
     database_url: str = DEFAULT_DATABASE_URL
-    weather_api_base_url: str = "https://api.open-meteo.com/v1/forecast"
-    weather_api_archive_url: str = "https://archive-api.open-meteo.com/v1/archive"
-    weather_api_timeout_seconds: float = 10
-    store_latitude: float = 35.6895
-    store_longitude: float = 139.6917
+    weather_api_base_url: str = DEFAULT_FORECAST_URL
+    weather_api_archive_url: str = DEFAULT_ARCHIVE_URL
+    weather_api_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    store_latitude: float = DEFAULT_LATITUDE
+    store_longitude: float = DEFAULT_LONGITUDE
     model_daily_path: str = "models/daily.joblib"
     model_time_band_path: str = "models/time_band.joblib"
     # カンマ区切りの文字列で受け、リストに分割する。

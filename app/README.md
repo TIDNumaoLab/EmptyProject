@@ -93,3 +93,11 @@ cd backend
 ```bash
 ../.venv/Scripts/python -m smdx_api.commands import_holidays --file syukujitsu.csv
 ```
+
+### 気象の過去実績の取得(fetch_weather_actuals)
+
+Open-Meteo の過去実績API から、店舗の位置(`STORE_LATITUDE`・`STORE_LONGITUDE`)の1時間ごとの気象を取得して保存する(再学習の前に実行)。同じ時刻は上書きする。
+
+```bash
+../.venv/Scripts/python -m smdx_api.commands fetch_weather_actuals --start 2025-09-01 --end 2026-10-15
+```

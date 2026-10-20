@@ -15,6 +15,7 @@ from smdx_api.api import (
 from smdx_api.config import AppConfig, get_config
 from smdx_api.db.session import make_engine, make_session_factory
 from smdx_api.security import CSRF_HEADER, CsrfMiddleware
+from smdx_api.weather_client.client import OpenMeteoClient
 
 SESSION_COOKIE_NAME = "smdx_session"
 
@@ -25,6 +26,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.state.config = config
     # 接続は最初の利用時に張られる(DB が無くても /health は応答する)
     app.state.session_factory = make_session_factory(make_engine(config.database_url))
+    # 気象APIの呼び出しは差し替え可能にする(試験では偽のクライアントに置き換える)
+    app.state.weather_client = OpenMeteoClient.from_config(config)
 
     # add_middleware は後に追加したものほど外側になる。外側から CORS → CSRF → セッション の順にする
     app.add_middleware(
