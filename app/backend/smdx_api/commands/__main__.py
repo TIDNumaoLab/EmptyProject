@@ -2,13 +2,14 @@
 import argparse
 import sys
 
-from smdx_api.commands import create_user
+from smdx_api.commands import create_user, import_holidays
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m smdx_api.commands", description="スーパーマーケットDX 管理コマンド")
     sub = parser.add_subparsers(dest="command")
     create_user.add_parser(sub)
+    import_holidays.add_parser(sub)
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help(sys.stderr)

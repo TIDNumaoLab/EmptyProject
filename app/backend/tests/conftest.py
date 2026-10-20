@@ -5,6 +5,7 @@ DB を使う試験は `@pytest.mark.db` を付け、環境変数 TEST_DATABASE_U
 """
 import itertools
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 from smdx_api.api.deps import get_db
 from smdx_api.config import AppConfig
 from smdx_api.auth.passwords import hash_password
+from smdx_api.clock import JST, get_now
 from smdx_api.db.models import Department, Product, User, UserDepartment
 from smdx_api.db.session import make_engine
 from smdx_api.main import create_app
@@ -62,12 +64,37 @@ def db(db_engine):
     conn.close()
 
 
+class FixedClock:
+    """試験用の時計。API の現在時刻(get_now)をこの値に固定する。"""
+
+    def __init__(self, value: datetime) -> None:
+        self.value = value
+
+    def set(self, value: datetime) -> None:
+        self.value = value
+
+    def advance(self, **delta) -> None:
+        self.value = self.value + timedelta(**delta)
+
+
 @pytest.fixture
-def app(request, config):
-    app = create_app(config)
+def fixed_now() -> FixedClock:
+    return FixedClock(datetime(2026, 10, 16, 10, 0, tzinfo=JST))
+
+
+def _apply_overrides(request, app) -> None:
     if "db" in request.fixturenames:
         session = request.getfixturevalue("db")
         app.dependency_overrides[get_db] = lambda: session
+    if "fixed_now" in request.fixturenames:
+        clock = request.getfixturevalue("fixed_now")
+        app.dependency_overrides[get_now] = lambda: clock.value
+
+
+@pytest.fixture
+def app(request, config):
+    app = create_app(config)
+    _apply_overrides(request, app)
     return app
 
 
@@ -83,9 +110,7 @@ def make_client(request, config):
 
     def make(**overrides) -> TestClient:
         app = create_app(config.model_copy(update=overrides))
-        if "db" in request.fixturenames:
-            session = request.getfixturevalue("db")
-            app.dependency_overrides[get_db] = lambda: session
+        _apply_overrides(request, app)
         return TestClient(app, headers={"X-Requested-With": "smdx"})
 
     return make

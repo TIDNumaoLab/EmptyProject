@@ -85,3 +85,11 @@ cd backend
 ../.venv/Scripts/python -m smdx_api.commands create_user --login-id tanaka --name 田中 --role staff --departments VEG,FISH
 ../.venv/Scripts/python -m smdx_api.commands create_user --login-id tencho --name 店長 --role manager
 ```
+
+### 祝日の取込(import_holidays)
+
+内閣府の「国民の祝日」CSV(`syukujitsu.csv`、Shift_JIS のままでよい)を取り込む。既存の祝日(kind=holiday)はすべて置き換え、行事日はそのまま残す。行事日は画面(カレンダー)で店長が登録する。
+
+```bash
+../.venv/Scripts/python -m smdx_api.commands import_holidays --file syukujitsu.csv
+```
