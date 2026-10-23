@@ -2,8 +2,8 @@
 
 順序: products → pos・inventory・waste(商品の部門ごとに分けて CSV 取込と同じ処理)→ weather.csv → weather_actuals
 → calendar.csv の行事日 → calendar_days → promotions.csv → promotions。最後に特売・カレンダーの変更日時を記録する。
-祝日は import_holidays で入れる(calendar.csv の祝日は取り込まない。判断 2-4)。
-取込者は空(システム)とする(判断 2-13)。何度実行しても同じ状態になる。
+祝日は import_holidays で入れる(calendar.csv の祝日は取り込まない。詳細設計書「管理コマンド」)。
+取込者は空(システム)とする(詳細設計書「データ項目定義」の import_logs)。何度実行しても同じ状態になる。
 """
 import argparse
 import csv

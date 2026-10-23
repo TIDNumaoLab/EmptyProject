@@ -1,7 +1,7 @@
 """祝日の初期取込・再取込(内閣府の祝日CSV syukujitsu.csv)。
 
 kind=holiday の行をすべて置き換える(行事日はそのまま)。
-文字コードは UTF-8(BOM可)を先に試し、読めなければ cp932(内閣府のCSVは Shift_JIS)。判断 2-12。
+文字コードは UTF-8(BOM可)を先に試し、読めなければ cp932(内閣府のCSVは Shift_JIS)。詳細設計書「管理コマンド」。
 """
 import argparse
 import csv

@@ -85,7 +85,7 @@ def list_imports(
     if department_code:
         q = q.where(ImportLog.department_id == department_for(department_code, p, db).id)
     elif not p.is_manager:
-        # 担当者は自部門の取込と、部門を持たない商品マスタの取込を見られる(判断 2-7)
+        # 担当者は自部門の取込と、部門を持たない商品マスタの取込を見られる(詳細設計書「API仕様」)
         own = select(Department.id).where(Department.code.in_(p.department_codes))
         q = q.where(or_(ImportLog.department_id.in_(own), ImportLog.department_id.is_(None)))
     q = q.order_by(ImportLog.finished_at.desc(), ImportLog.id.desc()).limit(HISTORY_LIMIT)

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from smdx_api.db.models import Department, Setting
 from smdx_api.settings.values import INTERNAL_PREFIX, AppSettings, resolve, validate_changes
 
-# 特売・カレンダーの最終変更日時(削除も含む)。最新性判定で使う(判断 2-10)
+# 特売・カレンダーの最終変更日時(削除も含む)。最新性判定で使う(詳細設計書「自動再計算の対象と判定」)
 EVENTS_CHANGED_KEY = f"{INTERNAL_PREFIX}events_changed_at"
 
 

@@ -28,7 +28,7 @@ def put_inventory(body: InventoryInput, p: Principal = Depends(current_user), db
 def latest_inventory(
     department_code: str, p: Principal = Depends(current_user), db: Session = Depends(get_db)
 ) -> list[LatestInventoryOut]:
-    """部門の取扱中の商品すべてについて、基準日時が最も新しい在庫(無ければ空)。在庫入力画面の「前回」表示用(判断 2-8)。"""
+    """部門の取扱中の商品すべてについて、基準日時が最も新しい在庫(無ければ空)。在庫入力画面の「前回」表示用(詳細設計書「API仕様」)。"""
     department = department_for(department_code, p, db)
     latest = (
         select(InventorySnapshot.product_id, InventorySnapshot.quantity, InventorySnapshot.based_at)
