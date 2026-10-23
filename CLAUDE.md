@@ -24,7 +24,7 @@
 
 - 本体: Python 3.11 / FastAPI / SQLAlchemy 2.0 + Alembic / Pydantic 2 + pydantic-settings / httpx / argon2-cffi / pytest
 - 予測モデル作成: pandas 2・numpy / scikit-learn 1.5 系・LightGBM 4 系 / joblib / Jupyter Notebook
-- 画面: Node.js 20 / React 18 + TypeScript 5 / Vite 5 / React Router 7 / Axios / CSS Modules / Vitest + React Testing Library
+- 画面: Node.js 24 / React 18 + TypeScript 5 / Vite 5 / React Router 7 / Axios / CSS Modules / Vitest + React Testing Library
 - DB・インフラ: PostgreSQL 16 / Docker Compose / 研究室AWSの EC2 1台(RDS は使わない)/ Caddy で HTTPS
 - 気象データ: Open-Meteo(APIキー不要)
 

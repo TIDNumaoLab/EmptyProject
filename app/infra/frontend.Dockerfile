@@ -1,6 +1,6 @@
 # 画面(React)の開発用イメージ。ビルドコンテキストは app/
 # 評価環境用の本番ビルドの段は段階6で追加する
-FROM node:20
+FROM node:24
 
 ENV TZ=Asia/Tokyo
 WORKDIR /app/frontend
