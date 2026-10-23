@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from smdx_api.auth.permissions import Principal, can_access_department
 from smdx_api.auth.service import load_principal
 from smdx_api.db.models import Department
+from smdx_api.weather_client.client import WeatherClient
 
 UNAUTHORIZED = "ログインしてください"
 FORBIDDEN = "この操作を行う権限がありません"
@@ -21,6 +22,10 @@ def get_db(request: Request) -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+def get_weather_client(request: Request) -> WeatherClient:
+    return request.app.state.weather_client
 
 
 def current_user(request: Request, db: Session = Depends(get_db)) -> Principal:

@@ -17,6 +17,18 @@ py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./backend[dev]"
 
 ライブラリのバージョンは `constraints.txt` で固定している。インストールには必ず `-c constraints.txt` を付ける。
 
+## 研究用サンプルデータ(F-20)
+
+実データが無い間の開発・動作確認・バックテスト用。15品(青果6・鮮魚4・惣菜5)、実行日の前日までの400日、乱数シード42で生成する。
+同じ終端日・日数・シードなら同じ内容になる。出力先 `sample_data/output/` は Git 管理外。
+
+```bash
+py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./sample_data[dev]"
+.venv/Scripts/python -m smdx_sample --out sample_data/output --end-date 2026-10-15
+```
+
+出力: 標準取込形式の `products.csv`・`pos_sales.csv`・`inventory.csv`・`waste.csv` と、`weather.csv`・`calendar.csv`・`promotions.csv`・`true_demand.csv`(評価用の真の需要)。
+
 ## 設定
 
 `backend/.env.example` をコピーして `backend/.env` を作り、`SESSION_SECRET` を設定する(32文字以上。空のままでは起動しない)。
@@ -73,4 +85,29 @@ cd backend
 ```bash
 ../.venv/Scripts/python -m smdx_api.commands create_user --login-id tanaka --name 田中 --role staff --departments VEG,FISH
 ../.venv/Scripts/python -m smdx_api.commands create_user --login-id tencho --name 店長 --role manager
+```
+
+### 祝日の取込(import_holidays)
+
+内閣府の「国民の祝日」CSV(`syukujitsu.csv`、Shift_JIS のままでよい)を取り込む。既存の祝日(kind=holiday)はすべて置き換え、行事日はそのまま残す。行事日は画面(カレンダー)で店長が登録する。
+
+```bash
+../.venv/Scripts/python -m smdx_api.commands import_holidays --file syukujitsu.csv
+```
+
+### 気象の過去実績の取得(fetch_weather_actuals)
+
+Open-Meteo の過去実績API から、店舗の位置(`STORE_LATITUDE`・`STORE_LONGITUDE`)の1時間ごとの気象を取得して保存する(再学習の前に実行)。同じ時刻は上書きする。
+
+```bash
+../.venv/Scripts/python -m smdx_api.commands fetch_weather_actuals --start 2025-09-01 --end 2026-10-15
+```
+
+### サンプルデータの投入(import_sample)
+
+`smdx_sample` で生成したフォルダを一式投入する(商品マスタ・POS・在庫・廃棄・気象の過去実績・行事日・特売)。何度実行しても同じ状態になる。祝日は `import_holidays` で別に入れる。
+calendar.csv にある日付の行事日は置き換えるため、同じ日に画面から登録した行事日は消える(開発・評価用のサンプル投入向けの動作)。
+
+```bash
+../.venv/Scripts/python -m smdx_api.commands import_sample --folder ../sample_data/output
 ```

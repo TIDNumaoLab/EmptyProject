@@ -49,3 +49,13 @@ def test_main_password_mismatch_returns_1(monkeypatch, capsys):
     code = main(["create_user", "--login-id", "a", "--name", "a", "--role", "staff", "--departments", "VEG"])
     assert code == 1
     assert "パスワードが一致しません" in capsys.readouterr().err
+
+
+def test_main_does_not_crash_on_non_utf8_console(monkeypatch):
+    # Git Bash などで標準出力が cp1252 のとき、日本語の表示で異常終了しないこと
+    import io
+    import sys
+
+    fake = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr(sys, "stderr", fake)
+    assert main([]) == 2  # 日本語の説明文をヘルプとして表示する

@@ -1,4 +1,5 @@
 """設定値の読込・更新(DB の settings テーブル)。"""
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -6,6 +7,9 @@ from sqlalchemy.orm import Session
 
 from smdx_api.db.models import Department, Setting
 from smdx_api.settings.values import INTERNAL_PREFIX, AppSettings, resolve, validate_changes
+
+# 特売・カレンダーの最終変更日時(削除も含む)。最新性判定で使う(詳細設計書「自動再計算の対象と判定」)
+EVENTS_CHANGED_KEY = f"{INTERNAL_PREFIX}events_changed_at"
 
 
 def _departments(db: Session) -> list[tuple[str, str]]:
@@ -35,3 +39,20 @@ def update_settings(db: Session, changes: dict[str, Any], user_id: int) -> AppSe
             row.updated_by = user_id
     db.flush()
     return load_settings(db)
+
+
+def touch_internal(db: Session, key: str, at: datetime) -> None:
+    """内部用キーに日時を記録する(設定 API には出さない)。"""
+    if not key.startswith(INTERNAL_PREFIX):
+        raise ValueError(f"内部用キーは {INTERNAL_PREFIX} で始める: {key}")
+    row = db.scalar(select(Setting).where(Setting.key == key))
+    if row is None:
+        db.add(Setting(key=key, value=at.isoformat()))
+    else:
+        row.value = at.isoformat()
+    db.flush()
+
+
+def read_internal_datetime(db: Session, key: str) -> datetime | None:
+    value = db.scalar(select(Setting.value).where(Setting.key == key))
+    return datetime.fromisoformat(value) if value else None

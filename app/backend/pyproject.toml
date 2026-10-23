@@ -33,6 +33,8 @@ include = ["smdx_api*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# 試験の共通部品(tests/fakes.py など)を tests.xxx で import できるようにする
+pythonpath = ["."]
 markers = ["db: PostgreSQL が必要な試験(TEST_DATABASE_URL が無ければスキップ)"]
 # Starlette のテストクライアントが出す anyio の非推奨警告(ライブラリ側の問題)は表示しない
 filterwarnings = ["ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning"]
