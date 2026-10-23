@@ -23,6 +23,8 @@ dependencies = [
     "tzdata",
     "pandas",
     "joblib",
+    # 特徴量の共通パッケージ(app/features。-e ./features で先に入れる)
+    "smdx-features",
 ]
 
 [project.optional-dependencies]

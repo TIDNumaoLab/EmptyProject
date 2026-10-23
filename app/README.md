@@ -12,7 +12,7 @@ Python は 3.11 に統一する。uv で導入し、仮想環境は `app/.venv` 
 py -3.9 -m pip install --user uv          # uv が無い場合(PATH にあれば以降の `py -3.9 -m uv` は `uv` でよい)
 py -3.9 -m uv python install 3.11
 py -3.9 -m uv venv --python 3.11 .venv
-py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./backend[dev]"
+py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./features[dev]" -e "./backend[dev]"
 ```
 
 ライブラリのバージョンは `constraints.txt` で固定している。インストールには必ず `-c constraints.txt` を付ける。

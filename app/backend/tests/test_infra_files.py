@@ -29,3 +29,9 @@ def test_backend_image_is_python_311():
 def test_frontend_image_is_node_24():
     text = _read("frontend.Dockerfile")
     assert "node:24" in text and "npm ci" in text
+
+
+def test_backend_image_installs_features_package():
+    # 本体は特徴量の共通パッケージ(app/features)に依存するため、イメージにも入れる
+    text = _read("backend.Dockerfile")
+    assert "COPY features" in text and "./features" in text
