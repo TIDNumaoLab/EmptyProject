@@ -209,7 +209,7 @@ class Proposal(TimestampMixin, Base):
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
     target_date: Mapped[dt.date] = mapped_column(Date)
     time_band: Mapped[int | None] = mapped_column(Integer)
-    forecast_id: Mapped[int | None] = mapped_column(ForeignKey("forecasts.id"))
+    forecast_id: Mapped[int] = mapped_column(ForeignKey("forecasts.id"))
     proposed_qty: Mapped[int] = mapped_column(Integer)
     original_qty: Mapped[int] = mapped_column(Integer)
     recalculated_qty: Mapped[int | None] = mapped_column(Integer)
