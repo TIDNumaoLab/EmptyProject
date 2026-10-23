@@ -9,9 +9,10 @@
 付随列は推論器に渡さない。
 known_through: POS が取り込まれている最新日。基準日より前なら、基準日の代わりにこの日までで実績系の特徴量を作る
 (前日分の POS が未取込の日を「売上0」とみなさない。詳細設計書「欠損時の扱い」の「前日分のPOSが無い」)。
+missing_days: 基準日より前で POS が1行も無い日(未取込日)。実績系の特徴量で「売上0」ではなく「実績なし」として扱う。
 """
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal
@@ -79,11 +80,11 @@ class _Weather:
         return self._cache[key]
 
 
-def _series_by_product(daily_sales: pd.DataFrame) -> dict[str, SalesSeries]:
+def _series_by_product(daily_sales: pd.DataFrame, missing_days: Collection[date]) -> dict[str, SalesSeries]:
     rows: dict[str, list] = defaultdict(list)
     for code, d, q in zip(daily_sales["product_code"], daily_sales["sales_date"], daily_sales["quantity"]):
         rows[code].append((pd.Timestamp(d).date(), q))
-    return {code: SalesSeries.from_rows(r) for code, r in rows.items()}
+    return {code: SalesSeries.from_rows(r, missing_days) for code, r in rows.items()}
 
 
 def _band_of(hour: int, time_bands: Sequence[int], close_hour: int) -> int | None:
@@ -137,8 +138,9 @@ def build_daily_features(
     business_hours: tuple[int, int],
     precipitation_source: PrecipitationSource = PRECIPITATION_SOURCE,
     known_through: date | None = None,
+    missing_days: Collection[date] = (),
 ) -> pd.DataFrame:
-    series = _series_by_product(daily_sales)
+    series = _series_by_product(daily_sales, missing_days)
     promos, wx = _Promotions(promotions), _Weather(weather, precipitation_source)
     open_h, close_h = business_hours
     rows = [
@@ -159,6 +161,7 @@ def build_time_band_features(
     close_hour: int,
     precipitation_source: PrecipitationSource = PRECIPITATION_SOURCE,
     known_through: date | None = None,
+    missing_days: Collection[date] = (),
 ) -> pd.DataFrame:
     # 商品×時間帯ごとの日別の販売数(時間帯に含まれる時の合計)
     band_rows: dict[tuple[str, int], list] = defaultdict(list)
@@ -167,7 +170,7 @@ def build_time_band_features(
         band = _band_of(int(h), time_bands, close_hour)
         if band is not None:
             band_rows[(code, band)].append((pd.Timestamp(d).date(), q))
-    series = {k: SalesSeries.from_rows(v) for k, v in band_rows.items()}
+    series = {k: SalesSeries.from_rows(v, missing_days) for k, v in band_rows.items()}
     promos, wx = _Promotions(promotions), _Weather(weather, precipitation_source)
     bands = sorted(time_bands)
     rows = []

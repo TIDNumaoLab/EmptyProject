@@ -67,3 +67,28 @@ def test_time_split_last_28_days(sample_dir):
 def test_unknown_department_rejected(sample_dir):
     with pytest.raises(ValueError, match="部門"):
         build_training_table(load_folder(sample_dir), "daily", ["NONE"])
+
+
+def _drop_day(raw, day):
+    from dataclasses import replace
+
+    return replace(raw, pos=raw.pos[raw.pos.sales_date != day].reset_index(drop=True))
+
+
+def test_day_without_any_pos_is_excluded(sample_dir):
+    # POS が1行も無い日は未取込とみなし、学習・評価の対象日から外す(売上0として学習しない)
+    raw = load_folder(sample_dir)
+    gap = raw.pos.sales_date.max() - timedelta(days=10)
+    t = build_training_table(_drop_day(raw, gap), "daily", ["VEG"])
+    assert gap not in set(t.target_date)
+    assert t.groupby("product_code").target_date.nunique().eq(120 - 14 - 1).all()
+    # 前週同曜日に未取込日が当たる行は「実績なし」(0ではない)
+    row = t[(t.product_code == "VEG-001") & (t.target_date == gap + timedelta(days=7))].iloc[0]
+    assert pd.isna(row.sales_lag_7d)
+
+
+def test_time_band_day_without_any_pos_is_excluded(sample_dir):
+    raw = load_folder(sample_dir)
+    gap = raw.pos.sales_date.max() - timedelta(days=10)
+    t = build_training_table(_drop_day(raw, gap), "time_band", ["DELI"])
+    assert gap not in set(t.target_date)

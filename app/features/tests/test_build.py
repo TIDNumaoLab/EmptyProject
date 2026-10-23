@@ -114,3 +114,23 @@ def test_time_band_respects_known_through():
     df = build_time_band_features(t, hourly, CalendarData(), NO_PROMO, None, [10, 11, 14, 17], 20,
                                   known_through=date(2026, 10, 14))
     assert df.iloc[0].sales_avg_7d == pytest.approx(3.0)
+
+
+def test_missing_days_are_not_counted_as_zero():
+    # 10/10 は POS が1行も無い(未取込日)。7日平均からも前週同曜日からも外す
+    sales = daily_sales([("VEG-001", date(2026, 10, d), 10) for d in range(1, 16) if d != 10])
+    t = [DailyTarget("VEG-001", date(2026, 10, 17), date(2026, 10, 16))]
+    df = build_daily_features(t, sales, CalendarData(), NO_PROMO, None, (10, 20), missing_days={date(2026, 10, 10)})
+    assert df.iloc[0].sales_avg_7d == pytest.approx(10.0)
+    lag = build_daily_features([DailyTarget("VEG-001", date(2026, 10, 17), date(2026, 10, 9))], sales, CalendarData(),
+                               NO_PROMO, None, (10, 20), missing_days={date(2026, 10, 3)})
+    assert pd.isna(lag.iloc[0].sales_lag_7d)   # 基準日 10/08 以前の同じ曜日 10/03 が未取込
+
+
+def test_time_band_missing_days():
+    hourly = pd.DataFrame([("DELI-001", date(2026, 10, d), 12, 3) for d in range(1, 16) if d != 12],
+                          columns=["product_code", "sales_date", "sales_hour", "quantity"])
+    t = [BandTarget("DELI-001", date(2026, 10, 17), 11, date(2026, 10, 16))]
+    df = build_time_band_features(t, hourly, CalendarData(), NO_PROMO, None, [10, 11, 14, 17], 20,
+                                  missing_days={date(2026, 10, 12)})
+    assert df.iloc[0].sales_avg_7d == pytest.approx(3.0)

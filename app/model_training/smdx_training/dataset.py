@@ -1,9 +1,10 @@
 """学習用の表の作成。
 
 入力はサンプル出力と同じ形式のフォルダ(products.csv・pos_sales.csv・weather.csv・calendar.csv・promotions.csv、
-あれば true_demand.csv)。実データは同じ形式に書き出して使う(判断 3-9)。
+あれば true_demand.csv)。実データは同じ形式に書き出して使う(詳細設計書「学習・評価・バックテスト」)。
 情報の時点の規則を学習データにも当てはめる: 生鮮の計画日 = 対象日 − リードタイム、惣菜の計画日 = 対象日 − 1(前日作成)。
-基準日 = 計画日 − 1(判断 3-8)。前週同曜日・7日平均がそろわない最初の14日は除く。
+基準日 = 計画日 − 1。前週同曜日・7日平均がそろわない最初の14日は除く。
+POS が1行も無い日(店舗全体)は未取込日とみなし、学習・評価の対象日から外し、実績系の特徴量でも「実績なし」とする。
 """
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -105,7 +106,9 @@ def build_training_table(
         raise ValueError(f"未登録の部門です: {', '.join(sorted(unknown))}")
     products = raw.products[raw.products.department_code.isin(departments)]
     first, last = raw.pos.sales_date.min(), raw.pos.sales_date.max()
-    days = [first + timedelta(days=i) for i in range(WARMUP_DAYS, (last - first).days + 1)]
+    imported = set(raw.pos.sales_date)
+    missing = {first + timedelta(days=i) for i in range((last - first).days + 1)} - imported
+    days = [d for i in range(WARMUP_DAYS, (last - first).days + 1) if (d := first + timedelta(days=i)) in imported]
     cal = _calendar(raw)
 
     if granularity == "daily":
@@ -113,7 +116,8 @@ def build_training_table(
         sold = {(c, d): q for c, d, q in zip(daily.product_code, daily.sales_date, daily.quantity)}
         targets = [DailyTarget(code, d, d - timedelta(days=int(lt)))
                    for code, lt in zip(products.product_code, products.lead_time_days) for d in days]
-        table = build_daily_features(targets, daily, cal, raw.promotions, raw.weather, business_hours)
+        table = build_daily_features(targets, daily, cal, raw.promotions, raw.weather, business_hours,
+                                     missing_days=missing)
         table["quantity"] = [float(sold.get((t.product_code, t.target_date), 0)) for t in targets]
         return table
 
@@ -126,7 +130,8 @@ def build_training_table(
         if b is not None:
             sold_band[(code, d, b)] = sold_band.get((code, d, b), 0.0) + q
     targets = [BandTarget(code, d, b, d - timedelta(days=1)) for code in products.product_code for d in days for b in bands]
-    table = build_time_band_features(targets, hourly, cal, raw.promotions, raw.weather, bands, business_hours[1])
+    table = build_time_band_features(targets, hourly, cal, raw.promotions, raw.weather, bands, business_hours[1],
+                                     missing_days=missing)
     table["quantity"] = [sold_band.get((t.product_code, t.target_date, t.time_band), 0.0) for t in targets]
     return table
 
