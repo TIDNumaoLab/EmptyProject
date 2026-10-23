@@ -1,7 +1,7 @@
 """CSV取込(F-01〜F-03)と取込履歴。"""
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -38,6 +38,7 @@ def _out(db: Session, log: ImportLog) -> ImportLogOut:
 @router.post("/imports/{kind}", response_model=ImportLogOut)
 # 同期の関数にして FastAPI のスレッドプールで実行する(DB 処理の間、他の要求を止めない)
 def import_csv(
+    request: Request,
     kind: Kind,
     file: UploadFile = File(...),
     department_code: str | None = Form(None),
@@ -54,7 +55,14 @@ def import_csv(
         if not department_code:
             raise HTTPException(status_code=422, detail="部門を指定してください")
         department = department_for(department_code, p, db)
-    data = file.file.read()
+    max_mb = request.app.state.config.import_max_mb
+    limit = int(max_mb * 1024 * 1024)
+    # 上限を1バイト超えた時点で読むのをやめる
+    data = file.file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(
+            status_code=413, detail=f"ファイルが大きすぎます(上限 {max_mb:g}MB)。期間を分けて取り込んでください"
+        )
     try:
         log = run_import(db, kind, file.filename or "upload.csv", data, department, p.user_id, now)
     except FileFormatError as e:

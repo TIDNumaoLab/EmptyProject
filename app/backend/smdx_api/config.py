@@ -36,6 +36,8 @@ class AppConfig(BaseSettings):
     # 最後の操作からこの時間でログアウトになる(SessionMiddleware が応答ごとに Cookie を出し直す)
     session_max_age_hours: float = Field(default=3, gt=0)
     tz: str = "Asia/Tokyo"
+    # 取込ファイルの上限(MB)。全体をメモリに読んで検証するため、大きすぎるファイルで本体が止まらないようにする
+    import_max_mb: float = Field(default=50, gt=0)
 
     @field_validator("cors_allow_origins", mode="before")
     @classmethod

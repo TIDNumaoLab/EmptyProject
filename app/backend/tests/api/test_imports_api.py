@@ -63,6 +63,20 @@ def test_bad_header_is_422_without_log(client, login, user_factory, db):
 
 
 @pytest.mark.db
+def test_too_large_file_is_413_without_log(make_client, login, user_factory, product_factory, db):
+    # 上限 IMPORT_MAX_MB を超えるファイルは読み切らずに拒否する(取込履歴は残さない)
+    client = make_client(import_max_mb=0.001)  # 約1KB
+    login(client, user_factory(departments=("VEG",)))
+    product_factory("VEG-001", "VEG")
+    big = b"waste_date,product_code,quantity\n" + b"2026-10-15,VEG-001,4\n" * 100
+    res = _upload(client, "waste", big, "VEG")
+    assert res.status_code == 413 and "上限" in res.json()["detail"]
+    assert db.scalar(select(func.count()).select_from(ImportLog)) == 0
+    # 上限以内なら取り込める
+    assert _upload(client, "waste", WASTE_CSV, "VEG").status_code == 200
+
+
+@pytest.mark.db
 def test_manager_imports_products(client, login, user_factory, db):
     login(client, user_factory(role="manager", departments=()))
     csv = ("product_code,product_name,department_code,order_unit,lead_time_days,can_carry_over,cost_price,selling_price\n"
