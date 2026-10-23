@@ -67,3 +67,32 @@ def test_runtime_nan_falls_back_to_baseline(registry_with):
     reg = registry_with(model_dict(model=SometimesNaNModel(5.0)))
     b = predict(reg, "daily", feats([3.0, 4.0], [3.0, 4.0]), weather_available=True, current_time_bands=None)
     assert (b.values, b.is_baseline) == ([3.0, 4.0], True)
+
+
+def test_rows_without_weather_use_baseline_row_by_row(registry_with):
+    # 予報が一部の日にしか無い場合: 気象の欠けた行は中央値で埋めて推論せず、その行だけベースラインにする
+    import pandas as pd
+
+    f = feats([3.0, 4.0, 6.0], [3.0, 4.0, 6.0])
+    f["weather_code"] = pd.array([1, None, 3], dtype="Int64")
+    f.loc[2, "temperature"] = np.nan
+    b = predict(registry_with(model_dict()), "daily", f, weather_available=True, current_time_bands=None)
+    assert b.values == [5.0, 4.0, 6.0]
+    assert b.row_is_baseline == [False, True, True]
+    assert (b.is_baseline, b.model_version) == (False, "daily-2026.11.01-1")
+
+
+def test_all_rows_without_weather_is_baseline(registry_with):
+    import pandas as pd
+
+    f = feats([3.0], [3.0])
+    f["weather_code"] = pd.array([None], dtype="Int64")
+    b = predict(registry_with(model_dict()), "daily", f, weather_available=True, current_time_bands=None)
+    assert (b.values, b.row_is_baseline, b.is_baseline, b.model_version) == ([3.0], [True], True, "baseline")
+
+
+def test_row_is_baseline_for_whole_batch_fallbacks(registry_with, tmp_path):
+    b = predict(registry_with(model_dict()), "daily", feats([3.0, 4.0], [3.0, 4.0]), weather_available=False, current_time_bands=None)
+    assert b.row_is_baseline == [True, True]
+    ok = predict(registry_with(model_dict()), "daily", feats([3.0, 4.0], [3.0, 4.0]), weather_available=True, current_time_bands=None)
+    assert ok.row_is_baseline == [False, False]

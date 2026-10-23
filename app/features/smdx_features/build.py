@@ -7,6 +7,8 @@
 - weather: 1時間ごとの気象(time, weather_code, temperature, precipitation_probability, precipitation)。None は全行欠損
 出力: feature_columns(granularity) の列 + 付随列 target_date・holiday_name(行の順は targets の順)。
 付随列は推論器に渡さない。
+known_through: POS が取り込まれている最新日。基準日より前なら、基準日の代わりにこの日までで実績系の特徴量を作る
+(前日分の POS が未取込の日を「売上0」とみなさない。詳細設計書「欠損時の扱い」の「前日分のPOSが無い」)。
 """
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -95,9 +97,11 @@ def _band_of(hour: int, time_bands: Sequence[int], close_hour: int) -> int | Non
 
 
 def _common_row(code: str, target: date, plan_date: date, series: SalesSeries | None, calendar: CalendarData,
-                promos: _Promotions, w: WeatherSummary) -> dict:
+                promos: _Promotions, w: WeatherSummary, known_through: date | None) -> dict:
     flags = calendar_flags(target, calendar.holidays, calendar.events)
     base = base_date(plan_date)
+    if known_through is not None and known_through < base:
+        base = known_through
     s = series or SalesSeries({})
     lag, avg = sales_lag_7d(s, target, base), sales_avg_7d(s, base)
     return {
@@ -132,13 +136,14 @@ def build_daily_features(
     weather: pd.DataFrame | None,
     business_hours: tuple[int, int],
     precipitation_source: PrecipitationSource = PRECIPITATION_SOURCE,
+    known_through: date | None = None,
 ) -> pd.DataFrame:
     series = _series_by_product(daily_sales)
     promos, wx = _Promotions(promotions), _Weather(weather, precipitation_source)
     open_h, close_h = business_hours
     rows = [
         _common_row(t.product_code, t.target_date, t.plan_date, series.get(t.product_code), calendar, promos,
-                    wx.get(t.target_date, open_h, close_h, "max"))
+                    wx.get(t.target_date, open_h, close_h, "max"), known_through)
         for t in targets
     ]
     return _frame(rows, "daily")
@@ -153,6 +158,7 @@ def build_time_band_features(
     time_bands: Sequence[int],
     close_hour: int,
     precipitation_source: PrecipitationSource = PRECIPITATION_SOURCE,
+    known_through: date | None = None,
 ) -> pd.DataFrame:
     # 商品×時間帯ごとの日別の販売数(時間帯に含まれる時の合計)
     band_rows: dict[tuple[str, int], list] = defaultdict(list)
@@ -169,7 +175,7 @@ def build_time_band_features(
         i = bands.index(t.time_band)
         end = bands[i + 1] if i + 1 < len(bands) else close_hour
         row = _common_row(t.product_code, t.target_date, t.plan_date, series.get((t.product_code, t.time_band)),
-                          calendar, promos, wx.get(t.target_date, t.time_band, end, "mean"))
+                          calendar, promos, wx.get(t.target_date, t.time_band, end, "mean"), known_through)
         row["time_band"] = t.time_band
         rows.append(row)
     return _frame(rows, "time_band")

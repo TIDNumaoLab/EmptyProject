@@ -83,3 +83,34 @@ def test_build_time_band_sums_hours_in_band():
     assert pd.isna(by_band.loc[14, "sales_lag_7d"])  # 14時帯も売れたことが無い → 実績なし
     assert by_band.loc[11, "temperature"] == pytest.approx(20.0)
     assert by_band.loc[14, "weather_code"] == 61 and by_band.loc[11, "weather_code"] == 1
+
+
+def _ten_a_day(until_day: int):
+    # 10/01〜10/{until_day} まで毎日10個売れた
+    return daily_sales([("VEG-001", date(2026, 10, d), 10) for d in range(1, until_day + 1)])
+
+
+def test_unimported_pos_day_is_not_counted_as_zero():
+    # 計画日 10/16 → 基準日 10/15。POS は 10/14 までしか取り込まれていない(前日分が未更新)
+    t = [DailyTarget("VEG-001", date(2026, 10, 17), date(2026, 10, 16))]
+    stale = build_daily_features(t, _ten_a_day(14), CalendarData(), NO_PROMO, None, (10, 20), known_through=date(2026, 10, 14))
+    assert stale.iloc[0].sales_avg_7d == pytest.approx(10.0)   # 10/08〜10/14 だけで平均する
+    # known_through を渡さないと、10/15 を「売上0」とみなしてしまう(従来の動き)
+    naive = build_daily_features(t, _ten_a_day(14), CalendarData(), NO_PROMO, None, (10, 20))
+    assert naive.iloc[0].sales_avg_7d == pytest.approx(60 / 7)
+
+
+def test_lag_steps_back_past_unimported_days():
+    # 対象日 10/22 の前週同曜日は 10/15 だが未取込 → 10/08 の実績を使う
+    t = [DailyTarget("VEG-001", date(2026, 10, 22), date(2026, 10, 16))]
+    df = build_daily_features(t, _ten_a_day(14), CalendarData(), NO_PROMO, None, (10, 20), known_through=date(2026, 10, 14))
+    assert df.iloc[0].sales_lag_7d == 10
+
+
+def test_time_band_respects_known_through():
+    hourly = pd.DataFrame([("DELI-001", date(2026, 10, d), 12, 3) for d in range(1, 15)],
+                          columns=["product_code", "sales_date", "sales_hour", "quantity"])
+    t = [BandTarget("DELI-001", date(2026, 10, 17), 11, date(2026, 10, 16))]
+    df = build_time_band_features(t, hourly, CalendarData(), NO_PROMO, None, [10, 11, 14, 17], 20,
+                                  known_through=date(2026, 10, 14))
+    assert df.iloc[0].sales_avg_7d == pytest.approx(3.0)

@@ -40,6 +40,7 @@ def write_report(
     evaluation: Evaluation,
     backtests: Mapping[str, BacktestResult],
     selected: str | None,
+    safety_factor: float = 1.1,
 ) -> None:
     rows = {"baseline": evaluation.baseline, **evaluation.candidates}
     lines = [
@@ -63,7 +64,7 @@ def write_report(
         "",
         "## バックテスト(検証期間)",
         "",
-        "予測と本体の計算式(安全係数1.1)で日々発注・製造した場合の廃棄数・欠品数。金額は 廃棄×原価、欠品×売価。",
+        f"予測と本体の計算式(安全係数{safety_factor:g})で日々発注・製造した場合の廃棄数・欠品数。金額は 廃棄×原価、欠品×売価。",
         "",
         "| モデル | 廃棄数 | 欠品数 | 廃棄金額 | 欠品金額 |",
         "|---|---|---|---|---|",

@@ -7,6 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# LightGBM の Linux 版が使う OpenMP(libgomp)
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
+
 # ライブラリの版は constraints.txt で固定する(本体・モデル作成と同じ版)
 COPY constraints.txt ./
 # 特徴量の共通パッケージ(app/features)を本体と一緒に入れる

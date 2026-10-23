@@ -55,3 +55,52 @@ def test_report_notes_censored_stockout_without_true_demand(sample_dir, tmp_path
 def test_main_without_subcommand_returns_2():
     assert main([]) == 2
 
+
+
+def test_cli_passes_store_settings(sample_dir, tmp_path, monkeypatch):
+    # 店舗の設定(時間帯の区切り・営業時間・安全係数)を変えたら、それに合わせて作り直せること
+    seen = {}
+    real_build, real_bt, real_eval = cli.build_training_table, cli.run_backtest, cli.evaluate
+
+    def spy_build(*a, **k):
+        seen["build"] = k
+        return real_build(*a, **k)
+
+    def spy_bt(*a, **k):
+        seen["safety"] = k.get("safety_factor")
+        return real_bt(*a, **k)
+
+    monkeypatch.setattr(cli, "build_training_table", spy_build)
+    monkeypatch.setattr(cli, "run_backtest", spy_bt)
+    monkeypatch.setattr(cli, "evaluate", lambda *a, **k: dataclasses.replace(real_eval(*a, **k), selected="lightgbm"))
+    args = ["run", "--data", str(sample_dir), "--granularity", "time_band", "--out", str(tmp_path),
+            "--time-bands", "10,12,16", "--business-hours", "10-20", "--safety-factor", "1.2"]
+    assert main(args) == 0
+    assert seen["build"]["time_bands"] == [10, 12, 16] and seen["build"]["business_hours"] == (10, 20)
+    assert seen["safety"] == 1.2
+    meta = joblib.load(tmp_path / "time_band.joblib")["meta"]
+    assert meta["time_bands"] == [10, 12, 16]
+    assert "安全係数1.2" in next(tmp_path.glob("report-*.md")).read_text(encoding="utf-8")
+
+
+def test_cli_defaults_follow_design(sample_dir, tmp_path, monkeypatch):
+    seen = {}
+    real_build = cli.build_training_table
+    monkeypatch.setattr(cli, "build_training_table", lambda *a, **k: (seen.update(k), real_build(*a, **k))[1])
+    assert _run(sample_dir, tmp_path) == 0
+    assert seen["time_bands"] == [10, 11, 14, 17] and seen["business_hours"] == (10, 20)
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("opt,value,msg", [
+    ("--time-bands", "10,x", "時間帯の区切り"),
+    ("--time-bands", "11,10", "時間帯の区切り"),
+    ("--business-hours", "20-10", "営業時間"),
+    ("--safety-factor", "0", "安全係数"),
+])
+def test_cli_rejects_bad_settings(sample_dir, tmp_path, capsys, opt, value, msg):
+    with pytest.raises(SystemExit) as e:
+        main(["run", "--data", str(sample_dir), "--granularity", "daily", "--out", str(tmp_path), opt, value])
+    assert e.value.code == 2 and msg in capsys.readouterr().err
