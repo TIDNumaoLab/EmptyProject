@@ -1,0 +1,85 @@
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
+import pandas as pd
+import pytest
+
+from smdx_features.build import BandTarget, CalendarData, DailyTarget, build_daily_features, build_time_band_features
+from smdx_features.columns import DAILY_FEATURE_COLUMNS, TIME_BAND_FEATURE_COLUMNS
+
+JST = ZoneInfo("Asia/Tokyo")
+NO_PROMO = pd.DataFrame(columns=["product_code", "start_date", "end_date"])
+
+
+def hourly_fixture(day: date, rain_hours=(), temps=None) -> pd.DataFrame:
+    rows = []
+    for h in range(24):
+        code = 61 if h in rain_hours else 1
+        temp = (temps or {}).get(h, 15.0 + (h == 14) * 5)
+        rows.append((datetime(day.year, day.month, day.day, h, tzinfo=JST), code, temp, 80.0 if code == 61 else 10.0,
+                     2.0 if code == 61 else 0.0))
+    return pd.DataFrame(rows, columns=["time", "weather_code", "temperature", "precipitation_probability", "precipitation"])
+
+
+def daily_sales(rows):
+    return pd.DataFrame(rows, columns=["product_code", "sales_date", "quantity"])
+
+
+def test_build_daily_features_row():
+    df = build_daily_features(
+        [DailyTarget("VEG-001", date(2026, 10, 17), plan_date=date(2026, 10, 16))],
+        daily_sales=daily_sales([("VEG-001", date(2026, 10, 10), 7), ("VEG-001", date(2026, 10, 15), 3)]),
+        calendar=CalendarData({}, {}),
+        promotions=pd.DataFrame({"product_code": ["VEG-001"], "start_date": [date(2026, 10, 17)], "end_date": [date(2026, 10, 18)]}),
+        weather=hourly_fixture(date(2026, 10, 17), rain_hours={12, 13}),
+        business_hours=(10, 20),
+    )
+    row = df.iloc[0]
+    assert list(df.columns[: len(DAILY_FEATURE_COLUMNS)]) == DAILY_FEATURE_COLUMNS
+    assert (row.product_code, row.day_of_week, row.is_promotion, row.sales_lag_7d) == ("VEG-001", 5, 1, 7)
+    assert row.sales_avg_7d == pytest.approx(10 / 6)  # 10/10〜10/15 の6日(10/09 は最初の販売日より前)
+    assert (row.weather_code, row.temperature, row.precipitation) == (61, 20.0, 2.0)  # 降水量(判断 3-2)
+    assert (row.is_holiday, row.is_event_day, row.holiday_seq) == (0, 0, 0)   # 10/17 は普通の土曜(2日の休み)
+    assert row.target_date == date(2026, 10, 17) and row.holiday_name is None
+
+
+def test_long_weekend_and_names():
+    cal = CalendarData({date(2026, 10, 12): "スポーツの日"}, {date(2026, 10, 12): "秋祭り"})
+    df = build_daily_features([DailyTarget("VEG-001", date(2026, 10, 12), date(2026, 10, 11))], daily_sales([]), cal,
+                              NO_PROMO, None, (10, 20))
+    row = df.iloc[0]
+    assert (row.is_holiday, row.is_event_day, row.holiday_seq, row.holiday_name) == (1, 1, 3, "スポーツの日")
+
+
+def test_build_without_weather_gives_missing_and_no_history_gives_nan():
+    df = build_daily_features([DailyTarget("VEG-001", date(2026, 10, 17), date(2026, 10, 16))], daily_sales([]),
+                              CalendarData({}, {}), NO_PROMO, None, (10, 20))
+    row = df.iloc[0]
+    assert pd.isna(row.temperature) and pd.isna(row.weather_code) and pd.isna(row.precipitation)
+    assert pd.isna(row.sales_lag_7d) and pd.isna(row.sales_avg_7d)
+    assert str(df["weather_code"].dtype) == "Int64"
+
+
+def test_rows_keep_target_order():
+    targets = [DailyTarget("B", date(2026, 10, 17), date(2026, 10, 16)), DailyTarget("A", date(2026, 10, 16), date(2026, 10, 16))]
+    df = build_daily_features(targets, daily_sales([]), CalendarData({}, {}), NO_PROMO, None, (10, 20))
+    assert list(df.product_code) == ["B", "A"]
+
+
+def test_build_time_band_sums_hours_in_band():
+    # 前週同曜日(10/09)の 11〜13時の販売 2+3+4=9、17〜19時の販売 5+6+7=18。10時帯は売れたことが無い
+    hourly = pd.DataFrame(
+        [("DELI-001", date(2026, 10, 9), h, q) for h, q in [(11, 2), (12, 3), (13, 4), (17, 5), (18, 6), (19, 7)]],
+        columns=["product_code", "sales_date", "sales_hour", "quantity"],
+    )
+    targets = [BandTarget("DELI-001", date(2026, 10, 16), b, plan_date=date(2026, 10, 15)) for b in (10, 11, 14, 17)]
+    df = build_time_band_features(targets, hourly, CalendarData({}, {}), NO_PROMO,
+                                  hourly_fixture(date(2026, 10, 16), rain_hours={15}, temps={11: 18.0, 12: 20.0, 13: 22.0}),
+                                  time_bands=[10, 11, 14, 17], close_hour=20)
+    assert list(df.columns[: len(TIME_BAND_FEATURE_COLUMNS)]) == TIME_BAND_FEATURE_COLUMNS
+    by_band = df.set_index("time_band")
+    assert pd.isna(by_band.loc[10, "sales_lag_7d"])
+    assert by_band.loc[11, "sales_lag_7d"] == 9 and by_band.loc[17, "sales_lag_7d"] == 18
+    assert pd.isna(by_band.loc[14, "sales_lag_7d"])  # 14時帯も売れたことが無い → 実績なし
+    assert by_band.loc[11, "temperature"] == pytest.approx(20.0)
+    assert by_band.loc[14, "weather_code"] == 61 and by_band.loc[11, "weather_code"] == 1
