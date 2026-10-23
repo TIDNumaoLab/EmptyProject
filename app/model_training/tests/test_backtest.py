@@ -1,4 +1,4 @@
-"""バックテスト(詳細設計書 F-09 手順6、判断 3-12)。"""
+"""バックテスト(詳細設計書「学習・評価・バックテスト」手順6)。"""
 from datetime import date, timedelta
 
 import numpy as np

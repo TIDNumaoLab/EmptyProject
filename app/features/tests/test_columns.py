@@ -31,7 +31,7 @@ def test_feature_columns_by_granularity():
 
 def test_categorical_and_precipitation_source():
     assert CATEGORICAL_COLUMNS == ["product_code", "day_of_week", "time_band", "weather_code"]
-    # 学習用の過去実績(archive)は降水確率を返さないため、当面は降水量を使う(判断 3-2)
+    # 学習用の過去実績(archive)は降水確率を返さないため、当面は降水量を使う(詳細設計書「特徴量」)
     assert PRECIPITATION_SOURCE == "amount"
 
 

@@ -38,7 +38,7 @@ def test_build_daily_features_row():
     assert list(df.columns[: len(DAILY_FEATURE_COLUMNS)]) == DAILY_FEATURE_COLUMNS
     assert (row.product_code, row.day_of_week, row.is_promotion, row.sales_lag_7d) == ("VEG-001", 5, 1, 7)
     assert row.sales_avg_7d == pytest.approx(10 / 6)  # 10/10〜10/15 の6日(10/09 は最初の販売日より前)
-    assert (row.weather_code, row.temperature, row.precipitation) == (61, 20.0, 2.0)  # 降水量(判断 3-2)
+    assert (row.weather_code, row.temperature, row.precipitation) == (61, 20.0, 2.0)  # 降水量(詳細設計書「特徴量」)
     assert (row.is_holiday, row.is_event_day, row.holiday_seq) == (0, 0, 0)   # 10/17 は普通の土曜(2日の休み)
     assert row.target_date == date(2026, 10, 17) and row.holiday_name is None
 

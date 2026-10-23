@@ -25,7 +25,7 @@ TIME_BAND_FEATURE_COLUMNS = DAILY_FEATURE_COLUMNS[:2] + ["time_band"] + DAILY_FE
 CATEGORICAL_COLUMNS = ["product_code", "day_of_week", "time_band", "weather_code"]
 
 # precipitation 列の中身。学習用の過去実績(Open-Meteo archive)は降水確率を返さないため、当面は降水量(mm)を使う。
-# 【確認事項】過去の降水確率が得られると分かったら "probability" に切り替えて再学習する(判断 3-2)
+# 【確認事項】過去の降水確率が得られると分かったら "probability" に切り替えて再学習する(詳細設計書「特徴量」の precipitation の値)
 PrecipitationSource = Literal["amount", "probability"]
 PRECIPITATION_SOURCE: PrecipitationSource = "amount"
 

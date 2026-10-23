@@ -45,7 +45,7 @@ def _hours(t: time) -> float:
 def remaining_sales_ratio(
     based_at: time, open_: time, close: time, hourly_ratio: Mapping[int, float] | None
 ) -> float:
-    """在庫基準時刻から閉店までに売れる割合。開店前は1、閉店後は0(判断 3-7)。
+    """在庫基準時刻から閉店までに売れる割合。開店前は1、閉店後は0(詳細設計書「生鮮(日別)」の売上構成比)。
 
     時刻つきPOSの比率があれば、基準時刻の時の比率 × (60 − 分)/60 + それより後の時の比率の合計。
     無ければ営業時間の比率(残り営業時間 ÷ 営業時間)で代用する。
