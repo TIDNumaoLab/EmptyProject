@@ -242,7 +242,7 @@ def upgrade() -> None:
     sa.Column('product_id', sa.Integer(), nullable=False),
     sa.Column('target_date', sa.Date(), nullable=False),
     sa.Column('time_band', sa.Integer(), nullable=True),
-    sa.Column('forecast_id', sa.Integer(), nullable=True),
+    sa.Column('forecast_id', sa.Integer(), nullable=False),
     sa.Column('proposed_qty', sa.Integer(), nullable=False),
     sa.Column('original_qty', sa.Integer(), nullable=False),
     sa.Column('recalculated_qty', sa.Integer(), nullable=True),

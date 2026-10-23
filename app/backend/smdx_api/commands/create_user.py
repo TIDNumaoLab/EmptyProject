@@ -21,6 +21,9 @@ def create_user(
         raise CommandError("login_id を指定してください")
     if role not in ("staff", "manager"):
         raise CommandError("role は staff か manager を指定してください")
+    # 店長は全部門を操作できるため、所属部門は任意(要件定義書「利用者と権限」)
+    if role == "staff" and not department_codes:
+        raise CommandError("発注担当者は所属部門を1つ以上指定してください")
     if len(password) < MIN_PASSWORD_LENGTH:
         raise CommandError(f"パスワードは{MIN_PASSWORD_LENGTH}文字以上にしてください")
 
@@ -48,7 +51,7 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--login-id", required=True)
     p.add_argument("--name", required=True)
     p.add_argument("--role", required=True, choices=["staff", "manager"])
-    p.add_argument("--departments", default="", help="所属部門のコード(カンマ区切り。例: VEG,FISH)")
+    p.add_argument("--departments", default="", help="所属部門のコード(カンマ区切り。例: VEG,FISH)。staff は必須、manager は任意")
     p.add_argument("--password", help="省略すると入力を求める(履歴に残さないため省略を推奨)")
     p.set_defaults(handler=run)
 

@@ -81,8 +81,7 @@ def allowed_keys(departments: Departments) -> set[str]:
     return keys
 
 
-def resolve(stored: Mapping[str, Any], departments: Departments) -> AppSettings:
-    """保存済みの値と既定値から設定を組み立てる。値が不正なら SettingsError。"""
+def _resolve_hours(stored: Mapping[str, Any]) -> tuple[time, time]:
     hours = stored.get("business_hours", DEFAULT_BUSINESS_HOURS)
     if not isinstance(hours, Mapping):
         raise SettingsError("business_hours", "開店・閉店の時刻を指定してください")
@@ -90,6 +89,19 @@ def resolve(stored: Mapping[str, Any], departments: Departments) -> AppSettings:
     close = _parse_time("business_hours", hours.get("close"))
     if close <= open_:
         raise SettingsError("business_hours", "閉店時刻は開店時刻より後にしてください")
+    return open_, close
+
+
+def _resolve_bands(stored: Mapping[str, Any], open_: time, close: time) -> list[int]:
+    bands = stored.get("deli_time_bands")
+    if bands is None:
+        bands = [open_.hour] + [b for b in DEFAULT_LATER_BANDS if b > open_.hour]
+    return _validate_bands(bands, open_, close)
+
+
+def resolve(stored: Mapping[str, Any], departments: Departments) -> AppSettings:
+    """保存済みの値と既定値から設定を組み立てる。値が不正なら SettingsError。"""
+    open_, close = _resolve_hours(stored)
 
     safety, cutoff, delivery = {}, {}, {}
     for code, business_type in departments:
@@ -101,14 +113,15 @@ def resolve(stored: Mapping[str, Any], departments: Departments) -> AppSettings:
             key = f"delivery_time.{code}"
             delivery[code] = _parse_time(key, stored[key]) if key in stored else open_
 
-    bands = stored.get("deli_time_bands")
-    if bands is None:
-        bands = [open_.hour] + [b for b in DEFAULT_LATER_BANDS if b > open_.hour]
-    bands = _validate_bands(bands, open_, close)
+    bands = _resolve_bands(stored, open_, close)
 
-    raw_start = stored.get("deli_production_start", _default_production_start(bands))
-    if not isinstance(raw_start, Mapping) or set(raw_start) != {str(b) for b in bands}:
-        raise SettingsError("deli_production_start", "製造開始時刻はすべての時間帯について指定してください")
+    # 製造開始時刻は変更した時間帯だけを保存しているので、残りは既定値で補う
+    raw_start = stored.get("deli_production_start", {})
+    if not isinstance(raw_start, Mapping):
+        raise SettingsError("deli_production_start", "製造開始時刻は時間帯ごとに指定してください")
+    if not set(raw_start) <= {str(b) for b in bands}:
+        raise SettingsError("deli_production_start", "時間帯の区切りに無い時間帯の製造開始時刻は指定できません")
+    raw_start = {**_default_production_start(bands), **raw_start}
     production_start = {}
     for b in bands:
         t = _parse_time("deli_production_start", raw_start[str(b)])
@@ -147,8 +160,10 @@ def validate_changes(changes: Mapping[str, Any], stored: Mapping[str, Any], depa
     """変更内容を検証し、保存する値(JSON にできる形)を返す。
 
     stored は DB に保存済みの値(既定値で補う前)。変更後の全体で整合を確かめる。
-    時間帯の区切りを変えて製造開始時刻を指定しない場合は、新しい区切りの既定値を返り値に含める。
-    製造開始時刻は一部の時間帯だけの指定も受け付け、保存済みの値に重ねる。
+    製造開始時刻は、変更した時間帯だけを保存する(残りは既定値で補う)。そのため
+    - 一部の時間帯だけの指定も受け付け、保存済みの値に重ねる。
+    - 時間帯の区切りを変えて製造開始時刻を指定しない場合は、保存済みの値を捨てて既定値に戻す。
+    - 開店時刻の変更で既定の区切りが変わった場合は、無くなった時間帯の保存済みの値を外す。
     """
     allowed = allowed_keys(departments)
     for key in changes:
@@ -156,13 +171,20 @@ def validate_changes(changes: Mapping[str, Any], stored: Mapping[str, Any], depa
             raise SettingsError(key, "この設定項目はありません")
 
     out = dict(changes)
-    if "deli_time_bands" in out and "deli_production_start" not in out:
-        bands = out["deli_time_bands"]
-        if isinstance(bands, list):
-            out["deli_production_start"] = _default_production_start(bands)
-    elif "deli_production_start" in out and isinstance(out["deli_production_start"], Mapping):
-        current = to_flat(resolve(stored, departments))["deli_production_start"]
-        out["deli_production_start"] = {**current, **{str(k): v for k, v in out["deli_production_start"].items()}}
+    given = out.get("deli_production_start")
+    if "deli_time_bands" in out and given is None:
+        out["deli_production_start"] = {}
+    elif given is None or isinstance(given, Mapping):
+        saved = stored.get("deli_production_start")
+        saved = {str(k): v for k, v in saved.items()} if isinstance(saved, Mapping) else {}
+        if given is not None or saved:
+            open_, close = _resolve_hours({**stored, **out})
+            band_keys = {str(b) for b in _resolve_bands({**stored, **out}, open_, close)}
+            merged = {k: v for k, v in saved.items() if k in band_keys}
+            if given is not None:
+                merged |= {str(k): v for k, v in given.items()}
+            if given is not None or merged != saved:
+                out["deli_production_start"] = merged
 
     resolve({**stored, **out}, departments)
     return out

@@ -11,6 +11,7 @@ BASE = dict(login_id="x", name="x", role="staff", department_codes=["VEG"], pass
     (dict(password="short"), "パスワードは8文字以上にしてください"),
     (dict(role="admin"), "role は staff か manager を指定してください"),
     (dict(login_id=""), "login_id を指定してください"),
+    (dict(department_codes=[]), "発注担当者は所属部門を1つ以上指定してください"),
 ])
 def test_create_user_rejects_before_db(kwargs, msg):
     # DB に触れる前に検証するため、DB なしでも確かめられる

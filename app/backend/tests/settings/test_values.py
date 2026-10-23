@@ -56,9 +56,13 @@ def test_invalid_changes_raise(changes, key):
 
 
 def test_band_change_recomputes_production_start():
-    out = validate_changes({"deli_time_bands": [10, 12, 16]}, {}, DEPTS)
+    stored = {"deli_production_start": {"11": "10:30"}}
+    out = validate_changes({"deli_time_bands": [10, 12, 16]}, stored, DEPTS)
     assert out["deli_time_bands"] == [10, 12, 16]
-    assert out["deli_production_start"] == {"10": "09:00", "12": "11:00", "16": "15:00"}
+    # 区切りを変えたら、保存済みの製造開始時刻は捨てて新しい区切りの既定値に戻す
+    assert out["deli_production_start"] == {}
+    s = resolve({**stored, **out}, DEPTS)
+    assert s.deli_production_start == {10: time(9), 12: time(11), 16: time(15)}
 
 
 def test_business_hours_change_with_default_bands_is_valid():
@@ -68,8 +72,34 @@ def test_business_hours_change_with_default_bands_is_valid():
 
 
 def test_partial_production_start_is_merged():
-    out = validate_changes({"deli_production_start": {"11": "10:30"}}, {}, DEPTS)
-    assert out["deli_production_start"] == {"10": "09:00", "11": "10:30", "14": "13:00", "17": "16:00"}
+    # 指定した時間帯だけを保存し(保存済みの値に重ねる)、残りは既定値で補う
+    out = validate_changes({"deli_production_start": {"11": "10:30"}}, {"deli_production_start": {"14": "12:30"}}, DEPTS)
+    assert out["deli_production_start"] == {"11": "10:30", "14": "12:30"}
+    s = resolve(out, DEPTS)
+    assert s.deli_production_start == {10: time(9), 11: time(10, 30), 14: time(12, 30), 17: time(16)}
+
+
+def test_business_hours_change_after_partial_production_start():
+    # 製造開始時刻を一部だけ変えた後でも、営業時間を変えられる(既定の区切りが開店時刻に追従する)
+    stored = validate_changes({"deli_production_start": {"11": "10:30"}}, {}, DEPTS)
+    out = validate_changes({"business_hours": {"open": "09:00", "close": "20:00"}}, stored, DEPTS)
+    s = resolve({**stored, **out}, DEPTS)
+    assert s.deli_time_bands == [9, 11, 14, 17]
+    assert s.deli_production_start == {9: time(8), 11: time(10, 30), 14: time(13), 17: time(16)}
+
+
+def test_business_hours_change_drops_production_start_of_removed_band():
+    # 開店時刻の変更で無くなった時間帯(10時)の製造開始時刻は保存から外す
+    stored = {"deli_production_start": {"10": "09:30", "11": "10:30"}}
+    out = validate_changes({"business_hours": {"open": "09:00", "close": "20:00"}}, stored, DEPTS)
+    assert out["deli_production_start"] == {"11": "10:30"}
+    assert resolve({**stored, **out}, DEPTS).deli_production_start[9] == time(8)
+
+
+def test_production_start_for_unknown_band_is_rejected():
+    with pytest.raises(SettingsError) as e:
+        validate_changes({"deli_production_start": {"12": "11:00"}}, {}, DEPTS)
+    assert e.value.key == "deli_production_start"
 
 
 def test_flat_has_all_keys_and_excludes_internal():
