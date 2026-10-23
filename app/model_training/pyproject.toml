@@ -27,5 +27,3 @@ include = ["smdx_training*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Windows で joblib(loky)が物理コア数を調べられないときの警告(論理コア数で動くので問題ない)は表示しない
-filterwarnings = ["ignore:Could not find the number of physical cores:UserWarning"]

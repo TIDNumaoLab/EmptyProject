@@ -13,6 +13,8 @@ def test_candidates_are_rf_and_lightgbm_with_seed():
     assert set(c) == {"random_forest", "lightgbm"}
     assert c["random_forest"].named_steps["model"].random_state == 7
     assert c["lightgbm"].named_steps["model"].random_state == 7
+    # n_jobs を指定しないと LightGBM が物理コア数を調べ、Windows では長いエラーを表示する(本体での推論時も)
+    assert c["lightgbm"].named_steps["model"].n_jobs == -1
 
 
 def test_fit_candidates_predicts(sample_dir):
