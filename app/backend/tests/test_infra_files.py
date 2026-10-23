@@ -26,6 +26,6 @@ def test_backend_image_is_python_311():
     assert "-c constraints.txt" in text
 
 
-def test_frontend_image_is_node_20():
+def test_frontend_image_is_node_24():
     text = _read("frontend.Dockerfile")
-    assert "node:20" in text and "npm ci" in text
+    assert "node:24" in text and "npm ci" in text
