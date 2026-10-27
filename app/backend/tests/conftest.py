@@ -268,3 +268,47 @@ def proposal_factory(db, product_factory):
         return p
 
     return make
+
+
+def dept(db: Session, code: str) -> Department:
+    return db.scalar(select(Department).where(Department.code == code))
+
+
+def one(items, product_code: str):
+    """計算結果から商品コードの1件を取り出す。"""
+    found = [c for c in items if c.product_code == product_code]
+    assert len(found) == 1, f"{product_code}: {len(found)}件"
+    return found[0]
+
+
+@pytest.fixture
+def veg_setup(db, product_factory, add_pos, add_inventory, fixed_now) -> Product:
+    """VEG-001(入数6・LT1・持越可)。POS は 10/02〜10/15 の日計が毎日10、10/10(土)だけ20。
+    在庫は 10/16 14:30 に 8。現在は 10/16 15:00(締め 20:00 より前)。"""
+    fixed_now.set(jst(2026, 10, 16, 15))
+    p = product_factory(code="VEG-001", order_unit=6, lead_time_days=1, can_carry_over=True)
+    for i in range(14):
+        d = date(2026, 10, 2) + timedelta(days=i)
+        add_pos(p, d, 20 if d == date(2026, 10, 10) else 10)
+    add_inventory(p, jst(2026, 10, 16, 14, 30), 8)
+    return p
+
+
+@pytest.fixture
+def baseline_services(tmp_path):
+    """モデルなし(ベースライン)・偽の気象クライアント。"""
+    from smdx_api.proposals.compute_fresh import ComputeServices
+    from tests.fake_models import empty_registry
+    from tests.fakes import FakeWeatherClient
+
+    return ComputeServices(empty_registry(tmp_path), FakeWeatherClient())
+
+
+@pytest.fixture
+def model_services(tmp_path):
+    """常に5を返すモデル・偽の気象クライアント。"""
+    from smdx_api.proposals.compute_fresh import ComputeServices
+    from tests.fake_models import const_registry
+    from tests.fakes import FakeWeatherClient
+
+    return ComputeServices(const_registry(tmp_path), FakeWeatherClient())
