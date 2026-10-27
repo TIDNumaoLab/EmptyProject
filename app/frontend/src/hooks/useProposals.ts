@@ -59,8 +59,9 @@ export function useProposals(params: ProposalParams, opts: { pollMs?: number } =
           setJob(next);
           setError(`最新の予測の計算に失敗しました: ${next.error ?? ""}`);
         }
-      } catch (e) {
-        if (!stopped) setError(errorMessage(e));
+      } catch {
+        // 通信の一時的な失敗は、次の間隔で取り直す(進捗の確認を止めない)
+        if (!stopped) setJob({ ...job });
       }
     }, pollMs);
     return () => {

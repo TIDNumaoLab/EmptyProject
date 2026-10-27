@@ -180,3 +180,16 @@ def test_no_weather_does_not_loop_jobs(client, login, user_factory, veg_setup, a
     assert list_veg(client)["job"] is not None
     again = list_veg(client)
     assert again["job"] is None and again["proposals"][0]["warnings"] == ["NO_WEATHER"]
+
+
+@pytest.mark.db
+def test_job_progress_reports_timed_out_running_job_as_failed(client, login, user_factory, db, fixed_now):
+    """再起動などで止まった実行中のジョブは、10分を超えたら失敗として返す(画面が待ち続けないように)。"""
+    from smdx_api.proposals.jobs import JOB_TIMEOUT, start_or_get_job
+
+    job, _ = start_or_get_job(db, dept(db, "VEG"), date(2026, 10, 16), fixed_now.value, total=2)
+    login(client, user_factory(departments=("VEG",)))
+    assert client.get(f"/api/proposals/jobs/{job.id}").json()["status"] == "running"
+    fixed_now.advance(seconds=JOB_TIMEOUT.total_seconds() + 1)
+    body = client.get(f"/api/proposals/jobs/{job.id}").json()
+    assert (body["status"], body["error"]) == ("failed", "タイムアウトしました")

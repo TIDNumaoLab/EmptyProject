@@ -68,3 +68,25 @@ test("recalculate starts polling the returned job", async () => {
   });
   await waitFor(() => expect(result.current.job).toBeNull());
 });
+
+test("job progress failure is retried at the next interval", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.mocked(proposalsApi.listProposals)
+    .mockResolvedValueOnce(listResponse([], running(0, 1)))
+    .mockResolvedValueOnce(listResponse([proposal()]));
+  vi.mocked(proposalsApi.getJob)
+    .mockRejectedValueOnce({})
+    .mockResolvedValueOnce({ id: 5, status: "succeeded", processed: 1, total: 1, error: null });
+
+  const { result } = renderHook(() => useProposals({ departmentCode: "VEG" }, { pollMs: 1000 }));
+  await waitFor(() => expect(result.current.job?.status).toBe("running"));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  await waitFor(() => expect(result.current.job).toBeNull());
+  expect(proposalsApi.getJob).toHaveBeenCalledTimes(2);
+  expect(result.current.data?.proposals).toHaveLength(1);
+});

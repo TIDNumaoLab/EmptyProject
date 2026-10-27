@@ -22,7 +22,7 @@ from smdx_api.proposals.actions import ProposalNotFound
 from smdx_api.proposals.basis import BASIS_KEYS
 from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets, department_products, fresh_target_dates
 from smdx_api.proposals.deadlines import apply_deadlines
-from smdx_api.proposals.jobs import JOB_TIMEOUT, start_or_get_job
+from smdx_api.proposals.jobs import JOB_TIMEOUT, TIMED_OUT, start_or_get_job
 from smdx_api.proposals.rules import InputError, StateError
 from smdx_api.proposals.schedule import TargetOutOfRange, check_target_range
 from smdx_api.proposals.service import JobLauncher, job_target_date, needs_auto_recalc
@@ -184,11 +184,16 @@ def recalculate(
 
 
 @router.get("/jobs/{job_id}", response_model=JobOut)
-def get_job(job_id: int, p: Principal = Depends(current_user), db: Session = Depends(get_db)) -> JobOut:
+def get_job(job_id: int, p: Principal = Depends(current_user), db: Session = Depends(get_db),
+            now: datetime = Depends(get_now)) -> JobOut:
     job = db.get(ProposalJob, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=NOT_FOUND)
     department_for(db.get(Department, job.department_id).code, p, db)
+    # 再起動などで止まった実行中のジョブは、10分を超えたら失敗とする(画面が待ち続けないように)
+    if job.status == "running" and job.started_at < now - JOB_TIMEOUT:
+        job.status, job.error, job.finished_at = "failed", TIMED_OUT, now
+        db.commit()
     return _job_out(job)
 
 
