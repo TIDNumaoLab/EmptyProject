@@ -98,5 +98,5 @@ def test_run_job_failure_records_error(db, veg_setup, job_session_factory, tmp_p
             lambda: fixed_now.value)
     db.expire_all()
     job = db.get(ProposalJob, job.id)
-    assert job.status == "failed" and job.error.startswith("計算の途中で失敗") and len(job.error) == 500
+    assert job.status == "failed" and job.error == "計算中にエラーが発生しました。時間をおいて再計算してください"
     assert job.finished_at == fixed_now.value and count_proposals(db) == 0

@@ -91,3 +91,43 @@ def test_persist_rereads_state_before_saving(db, proposal_factory):
     apply_computed(db, dept(db, "VEG"), [computed(p.product, 26)], T1)
     db.refresh(p)
     assert (p.proposed_qty, p.recalculated_qty, p.is_adjusted) == (15, 26, True)
+
+
+@pytest.mark.db
+def test_persist_handles_row_created_by_another_job(db, proposal_factory, monkeypatch):
+    """別のジョブが同じ提案を先に作った場合(読み直しでは無かったのに、作る時点ではある)も失敗せずに更新する。"""
+    from smdx_api.proposals import persist
+
+    p = proposal_factory(qty=20)
+    real_find = persist._find
+    calls = []
+
+    def racing_find(db_, department_id, c):
+        calls.append(1)
+        return None if len(calls) == 1 else real_find(db_, department_id, c)
+
+    monkeypatch.setattr(persist, "_find", racing_find)
+    apply_computed(db, dept(db, "VEG"), [computed(p.product, 26)], T1)
+    db.refresh(p)
+    assert (p.proposed_qty, p.calculated_at) == (26, T1)
+    assert len(list(db.scalars(select(Proposal)))) == 1
+
+
+@pytest.mark.db
+def test_job_error_message_hides_internal_details(db, veg_setup, job_session_factory, tmp_path, fixed_now):
+    from smdx_api.db.models import ProposalJob
+    from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets
+    from smdx_api.proposals.jobs import JOB_FAILED, run_job, start_or_get_job
+    from tests.fake_models import const_registry
+    from tests.fakes import FakeWeatherClient
+
+    class ExplodingWeather(FakeWeatherClient):
+        def fetch_forecast(self, start, end):
+            raise RuntimeError("(psycopg.errors.UniqueViolation) duplicate key value")
+
+    job, _ = start_or_get_job(db, dept(db, "VEG"), date(2026, 10, 16), fixed_now.value, total=1)
+    run_job(job.id, FreshTargets(None), job_session_factory, ComputeServices(const_registry(tmp_path), ExplodingWeather()),
+            lambda: fixed_now.value)
+    db.expire_all()
+    job = db.get(ProposalJob, job.id)
+    assert job.status == "failed" and job.error == JOB_FAILED and "psycopg" not in job.error

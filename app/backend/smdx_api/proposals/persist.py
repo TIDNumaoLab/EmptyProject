@@ -9,6 +9,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from smdx_api.db.models import Department, Forecast, Proposal, ProposalHistory
@@ -31,6 +32,20 @@ def _forecast(db: Session, c) -> Forecast:
     return f
 
 
+def _create(db: Session, department: Department, c, now: datetime) -> int | None:
+    """提案を新しく作る。同じ対象の行が既にあれば(一意制約に当たれば)作らずに None を返す。"""
+    f = _forecast(db, c)
+    proposal_id = db.execute(insert(Proposal).values(
+        department_id=department.id, product_id=c.product_id, target_date=c.target_date, time_band=c.time_band,
+        forecast_id=f.id, proposed_qty=c.qty, original_qty=c.qty, is_adjusted=False, status="pending",
+        deadline=c.deadline, warnings=list(c.warnings), calculated_at=now, basis=c.basis,
+    ).on_conflict_do_nothing().returning(Proposal.id)).scalar()
+    if proposal_id is None:
+        db.delete(f)
+        db.flush()
+    return proposal_id
+
+
 def apply_computed(
     db: Session,
     department: Department,
@@ -41,15 +56,16 @@ def apply_computed(
     for i, c in enumerate(computed, start=1):
         p = _find(db, department.id, c)
         if p is None:
-            f = _forecast(db, c)
-            p = Proposal(department_id=department.id, product_id=c.product_id, target_date=c.target_date,
-                         time_band=c.time_band, forecast_id=f.id, proposed_qty=c.qty, original_qty=c.qty,
-                         is_adjusted=False, status="pending", deadline=c.deadline, warnings=list(c.warnings),
-                         calculated_at=now, basis=c.basis)
-            db.add(p)
-            db.flush()
-            db.add(ProposalHistory(proposal_id=p.id, action="create", qty_after=c.qty, occurred_at=now))
-        elif p.status in ("confirmed", "expired"):
+            created = _create(db, department, c, now)
+            if created is not None:
+                db.add(ProposalHistory(proposal_id=created, action="create", qty_after=c.qty, occurred_at=now))
+                db.flush()
+                if on_progress is not None:
+                    on_progress(i)
+                continue
+            # 別のジョブ(既定表示と対象日指定など)が先に作った。読み直して通常の更新をする
+            p = _find(db, department.id, c)
+        if p.status in ("confirmed", "expired"):
             pass
         elif is_protected(state_of(p)):
             p.recalculated_qty = c.qty

@@ -3,6 +3,7 @@
 同じ部門×対象日(生鮮の既定表示では発注日)で実行中のジョブがあれば新たに開始せず、そのジョブを返す。
 開始は部門の行をロックしてから行い、同時に一覧を開いても1件しか作らない。10分を超えた実行中のジョブは失敗とみなす。
 """
+import logging
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
@@ -14,9 +15,11 @@ from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets, comp
 from smdx_api.proposals.persist import apply_computed
 from smdx_api.settings.service import load_settings
 
+log = logging.getLogger(__name__)
+
 JOB_TIMEOUT = timedelta(minutes=10)
 TIMED_OUT = "タイムアウトしました"
-ERROR_MAX_CHARS = 500
+JOB_FAILED = "計算中にエラーが発生しました。時間をおいて再計算してください"
 
 
 def start_or_get_job(db: Session, department: Department, target_date: date, now: datetime, total: int) -> tuple[ProposalJob, bool]:
@@ -64,8 +67,10 @@ def run_job(
             apply_computed(db, department, computed, now, on_progress=progress)
             job.status, job.finished_at = "succeeded", now_fn()
             db.commit()
-        except Exception as e:
+        except Exception:
+            # 例外の文言(SQL など)は画面に出さず、ログにだけ残す
+            log.exception("提案の再計算ジョブが失敗しました: job_id=%s", job_id)
             db.rollback()
             job = db.get(ProposalJob, job_id)
-            job.status, job.error, job.finished_at = "failed", str(e)[:ERROR_MAX_CHARS], now_fn()
+            job.status, job.error, job.finished_at = "failed", JOB_FAILED, now_fn()
             db.commit()
