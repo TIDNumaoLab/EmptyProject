@@ -42,3 +42,37 @@ def const_registry(tmp_path: Path, value: float = 5.0, version: str = MODEL_VERS
         "metrics": {"wape": 0.2, "mae": 1.0, "baseline_wape": 0.3},
     }}, path)
     return ModelRegistry({"daily": path, "time_band": tmp_path / "no-band.joblib"})
+
+
+def forest_registry(tmp_path: Path, product_codes: list[str], version: str = MODEL_VERSION) -> ModelRegistry:
+    """学習側(smdx_training)と同じ形のランダムフォレスト(300本)を、試験用の乱数データで学習して保存する。
+    性能試験で、実際のモデルに近い推論時間を測るために使う。"""
+    import pandas as pd
+    from sklearn.compose import ColumnTransformer
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.impute import SimpleImputer
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import OrdinalEncoder
+
+    from smdx_features.columns import sample_frame
+
+    cols = feature_columns("daily")
+    X = sample_frame("daily", rows=2000)[cols]
+    rng = np.random.default_rng(0)
+    X["product_code"] = rng.choice(product_codes, size=len(X))
+    y = X["sales_lag_7d"] + rng.normal(0, 1, len(X))
+    pipe = Pipeline([
+        ("prep", ColumnTransformer([
+            ("product", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1), ["product_code"]),
+            ("numeric", SimpleImputer(strategy="median"), [c for c in cols if c != "product_code"]),
+        ])),
+        ("model", RandomForestRegressor(n_estimators=300, random_state=0, n_jobs=-1)),
+    ])
+    pipe.fit(pd.DataFrame(X), y)
+    path = tmp_path / "daily-forest.joblib"
+    joblib.dump({"model": pipe, "meta": {
+        "version": version, "granularity": "daily", "feature_columns": cols,
+        "trained_from": date(2025, 9, 1), "trained_to": date(2026, 10, 31), "time_bands": None,
+        "metrics": {"wape": 0.2, "mae": 1.0, "baseline_wape": 0.3},
+    }}, path)
+    return ModelRegistry({"daily": path, "time_band": tmp_path / "no-band.joblib"})
