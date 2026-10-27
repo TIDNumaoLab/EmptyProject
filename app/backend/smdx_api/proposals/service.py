@@ -54,8 +54,9 @@ def needs_auto_recalc(
         p = found[(pid, d)]
         if p.status != "pending" or p.is_adjusted:
             continue
-        freshness = ProposalFreshness(p.calculated_at, (p.basis or {}).get("model_version", BASELINE_VERSION),
-                                      _fetched_at(p.basis))
+        basis = p.basis or {}
+        version = basis.get("loaded_model_version", basis.get("model_version", BASELINE_VERSION))
+        freshness = ProposalFreshness(p.calculated_at, version, _fetched_at(basis))
         if is_stale(freshness, ctx, now):
             return True
     return False

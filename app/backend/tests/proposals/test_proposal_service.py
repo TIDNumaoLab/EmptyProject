@@ -99,3 +99,36 @@ def test_needs_auto_recalc_explicit_date(db, veg_setup, baseline_services, fixed
     assert needs(db, baseline_services, now, FreshTargets(date(2026, 10, 20)))
     create_all(db, baseline_services, now, FreshTargets(date(2026, 10, 20)))
     assert not needs(db, baseline_services, now, FreshTargets(date(2026, 10, 20)))
+
+
+@pytest.mark.db
+def test_no_weather_proposal_does_not_retrigger_immediately(db, veg_setup, fixed_now, tmp_path):
+    """予報が取れずに作った提案を、作った直後に「古い」と判定し続けない(再計算が止まらなくなるため)。"""
+    from tests.fakes import FailingWeatherClient
+
+    now = fixed_now.value
+    services = ComputeServices(const_registry(tmp_path), FailingWeatherClient())
+    create_all(db, services, now)
+    assert not needs(db, services, now + timedelta(minutes=1))
+    # 判定時間が過ぎたら取り直す
+    assert needs(db, services, now + timedelta(hours=3))
+
+
+@pytest.mark.db
+def test_row_baseline_with_loaded_model_is_not_model_change(db, veg_setup, fixed_now, tmp_path):
+    """モデルを読み込んでいても行がベースラインで予測された提案は、モデルの版の変更とみなさない。"""
+    from smdx_api.db.models import Proposal
+    from sqlalchemy import select
+
+    now = fixed_now.value
+    services = ComputeServices(const_registry(tmp_path), baseline_services_weather())
+    create_all(db, services, now)
+    p = db.scalars(select(Proposal)).one()
+    p.basis = {**p.basis, "model_version": "baseline"}  # 対象日の行だけ気象が欠けてベースラインになった場合
+    db.flush()
+    assert not needs(db, services, now + timedelta(minutes=1))
+
+
+def baseline_services_weather():
+    from tests.fakes import FakeWeatherClient
+    return FakeWeatherClient()

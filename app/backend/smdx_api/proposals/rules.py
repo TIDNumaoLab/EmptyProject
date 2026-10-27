@@ -103,7 +103,9 @@ class ProposalFreshness:
 def is_stale(p: ProposalFreshness, ctx: FreshnessContext, now: datetime) -> bool:
     """作成済みの提案を再計算すべきか(未作成の判定は呼び出し側で行う)。
 
-    予報なし(NO_WEATHER)で作った提案は予報の取得日時が無いため、経過したものとみなして次の機会に取り直す。
+    予報なし(NO_WEATHER)で作った提案は予報の取得日時が無いため、計算した日時から判定時間が過ぎたら取り直す
+    (すぐに「古い」とすると、予報が取れない間は画面を開くたびに再計算が続くため)。
+    model_version は計算時に読み込んでいたモデルの版(行ごとにベースラインになったかどうかではない)。
     """
     if ctx.data_changed_at is not None and ctx.data_changed_at > p.calculated_at:
         return True
@@ -111,6 +113,5 @@ def is_stale(p: ProposalFreshness, ctx: FreshnessContext, now: datetime) -> bool
         return True
     if p.model_version != ctx.current_model_version:
         return True
-    if p.weather_fetched_at is None:
-        return True
-    return now - p.weather_fetched_at >= timedelta(hours=ctx.stale_hours)
+    fetched = p.weather_fetched_at or p.calculated_at
+    return now - fetched >= timedelta(hours=ctx.stale_hours)

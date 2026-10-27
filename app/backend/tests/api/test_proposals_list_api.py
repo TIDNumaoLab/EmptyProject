@@ -164,3 +164,19 @@ def test_list_applies_deadlines(client, login, user_factory, proposal_factory, f
 def test_manager_can_list_any_department(client, login, user_factory, test_services):
     login(client, user_factory(role="manager", departments=()))
     assert client.get("/api/proposals", params={"department_code": "FISH"}).status_code == 200
+
+
+@pytest.mark.db
+def test_no_weather_does_not_loop_jobs(client, login, user_factory, veg_setup, app, job_session_factory, tmp_path):
+    """予報が取れない間も、作成直後に一覧を取り直すたびにジョブを始めない(再計算が止まらなくなるのを防ぐ)。"""
+    from smdx_api.api.deps import get_compute_services, get_session_factory
+    from smdx_api.proposals.compute_fresh import ComputeServices
+    from tests.fake_models import const_registry
+    from tests.fakes import FailingWeatherClient
+
+    app.dependency_overrides[get_compute_services] = lambda: ComputeServices(const_registry(tmp_path), FailingWeatherClient())
+    app.dependency_overrides[get_session_factory] = lambda: job_session_factory
+    login(client, user_factory(departments=("VEG",)))
+    assert list_veg(client)["job"] is not None
+    again = list_veg(client)
+    assert again["job"] is None and again["proposals"][0]["warnings"] == ["NO_WEATHER"]

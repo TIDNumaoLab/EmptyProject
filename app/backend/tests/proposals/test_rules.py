@@ -108,7 +108,9 @@ P = ProposalFreshness(CALC, "daily-2026.11.01-1", CALC)
     (P, replace(CTX, data_changed_at=CALC + timedelta(minutes=1)), CALC + timedelta(hours=1), True),
     (P, replace(CTX, events_changed_at=CALC + timedelta(minutes=1)), CALC + timedelta(hours=1), True),
     (P, replace(CTX, current_model_version="daily-2026.11.08-1"), CALC + timedelta(hours=1), True),
-    (replace(P, weather_fetched_at=None), CTX, CALC + timedelta(minutes=1), True),       # 予報なしで作った提案
+    # 予報なしで作った提案は、計算した日時から判定時間が過ぎたら取り直す
+    (replace(P, weather_fetched_at=None), CTX, CALC + timedelta(minutes=1), False),
+    (replace(P, weather_fetched_at=None), CTX, CALC + timedelta(hours=3), True),
     (P, replace(CTX, data_changed_at=CALC - timedelta(minutes=1)), CALC + timedelta(hours=1), False),
     (P, replace(CTX, events_changed_at=CALC), CALC + timedelta(hours=1), False),        # 同時刻は「後」ではない
 ])
