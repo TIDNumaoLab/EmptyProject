@@ -17,19 +17,27 @@ from smdx_api.api.deps import (
 from smdx_api.auth.permissions import Principal
 from smdx_api.clock import get_now
 from smdx_api.db.models import Department, Product, Proposal, ProposalJob, User
+from smdx_api.proposals import actions
+from smdx_api.proposals.actions import ProposalNotFound
 from smdx_api.proposals.basis import BASIS_KEYS
 from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets, department_products, fresh_target_dates
 from smdx_api.proposals.deadlines import apply_deadlines
 from smdx_api.proposals.jobs import JOB_TIMEOUT, start_or_get_job
+from smdx_api.proposals.rules import InputError, StateError
 from smdx_api.proposals.schedule import TargetOutOfRange, check_target_range
 from smdx_api.proposals.service import JobLauncher, job_target_date, needs_auto_recalc
 from smdx_api.schemas.proposals import (
+    AdjustIn,
+    ApproveIn,
+    BulkApproveIn,
+    BulkApproveOut,
     FreshnessOut,
     JobOut,
     JobResponse,
     ProposalListOut,
     ProposalOut,
     RecalculateIn,
+    SkippedOut,
     StatusFilter,
 )
 from smdx_api.settings.service import load_settings
@@ -182,3 +190,75 @@ def get_job(job_id: int, p: Principal = Depends(current_user), db: Session = Dep
         raise HTTPException(status_code=404, detail=NOT_FOUND)
     department_for(db.get(Department, job.department_id).code, p, db)
     return _job_out(job)
+
+
+def _check_access(db: Session, proposal_id: int, p: Principal) -> None:
+    """提案の部門を操作できるか(不在は 404、他部門は 403)。"""
+    row = db.get(Proposal, proposal_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=NOT_FOUND)
+    department_for(db.get(Department, row.department_id).code, p, db)
+
+
+def _act(db: Session, fn, *args) -> ProposalOut:
+    try:
+        row = fn(db, *args)
+    except ProposalNotFound:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=NOT_FOUND) from None
+    except StateError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=e.message) from None
+    except InputError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=e.message) from None
+    db.commit()
+    db.refresh(row)
+    return proposals_out(db, [row])[0]
+
+
+def _prepare(db: Session, proposal_id: int, p: Principal, now: datetime) -> None:
+    _check_access(db, proposal_id, p)
+    # 期限経過の更新は、操作が条件違反で取り消されても残す
+    apply_deadlines(db, now)
+    db.commit()
+
+
+@router.patch("/{proposal_id}", response_model=ProposalOut)
+def adjust_proposal(proposal_id: int, body: AdjustIn, p: Principal = Depends(current_user),
+                    db: Session = Depends(get_db), now: datetime = Depends(get_now)) -> ProposalOut:
+    _prepare(db, proposal_id, p, now)
+    return _act(db, actions.adjust, proposal_id, body.quantity, body.reason, body.reason_note, p.user_id, now)
+
+
+@router.post("/approve-bulk", response_model=BulkApproveOut)
+def approve_bulk(body: BulkApproveIn, p: Principal = Depends(current_user), db: Session = Depends(get_db),
+                 now: datetime = Depends(get_now)) -> BulkApproveOut:
+    """他部門の提案が1件でも含まれていれば、何も承認せず全体を 403 にする。"""
+    rows = db.scalars(select(Proposal).where(Proposal.id.in_(body.ids)))
+    for code in {db.get(Department, r.department_id).code for r in rows}:
+        department_for(code, p, db)
+    approved, skipped = actions.approve_bulk(db, body.ids, p.user_id, now)
+    db.commit()
+    return BulkApproveOut(approved_ids=approved, skipped=[SkippedOut(id=i, reason=r) for i, r in skipped])
+
+
+@router.post("/{proposal_id}/approve", response_model=ProposalOut)
+def approve_proposal(proposal_id: int, body: ApproveIn, p: Principal = Depends(current_user),
+                     db: Session = Depends(get_db), now: datetime = Depends(get_now)) -> ProposalOut:
+    _prepare(db, proposal_id, p, now)
+    return _act(db, actions.approve, proposal_id, body.confirm_warnings, p.user_id, now)
+
+
+@router.post("/{proposal_id}/cancel-approval", response_model=ProposalOut)
+def cancel_approval(proposal_id: int, p: Principal = Depends(current_user), db: Session = Depends(get_db),
+                    now: datetime = Depends(get_now)) -> ProposalOut:
+    _prepare(db, proposal_id, p, now)
+    return _act(db, actions.cancel_approval, proposal_id, p.user_id, now)
+
+
+@router.post("/{proposal_id}/adopt-recalculated", response_model=ProposalOut)
+def adopt_recalculated(proposal_id: int, p: Principal = Depends(current_user), db: Session = Depends(get_db),
+                       now: datetime = Depends(get_now)) -> ProposalOut:
+    _prepare(db, proposal_id, p, now)
+    return _act(db, actions.adopt_recalculated, proposal_id, p.user_id, now)

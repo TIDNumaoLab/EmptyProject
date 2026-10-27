@@ -1,0 +1,121 @@
+"""提案の操作の API(詳細設計書「API仕様」「提案の状態遷移」「エラー応答」)。"""
+import pytest
+
+
+@pytest.mark.db
+@pytest.mark.parametrize("call,status", [
+    (lambda c, i: c.patch(f"/api/proposals/{i}", json={"quantity": -1, "reason": "other"}), 422),
+    (lambda c, i: c.patch(f"/api/proposals/{i}", json={"quantity": 3}), 422),           # 修正理由なし
+    (lambda c, i: c.patch(f"/api/proposals/{i}", json={"quantity": 3, "reason": "bad"}), 422),
+    (lambda c, i: c.patch(f"/api/proposals/{i}", json={"quantity": 1.5, "reason": "other"}), 422),
+    (lambda c, i: c.patch(f"/api/proposals/{i}", json={"quantity": 3, "reason": "other", "reason_note": "あ" * 129}), 422),
+    (lambda c, i: c.post(f"/api/proposals/{i}/cancel-approval"), 409),                  # 未承認の取消
+    (lambda c, i: c.post(f"/api/proposals/{i}/adopt-recalculated"), 409),
+    (lambda c, i: c.patch("/api/proposals/999999", json={"quantity": 3, "reason": "other"}), 404),
+    (lambda c, i: c.post("/api/proposals/999999/approve", json={}), 404),
+])
+def test_action_errors(client, login, user_factory, proposal_factory, fixed_now, call, status):
+    login(client, user_factory(departments=("VEG",)))
+    p = proposal_factory()
+    assert call(client, p.id).status_code == status
+
+
+@pytest.mark.db
+def test_adjust_and_conflict_messages(client, login, user_factory, proposal_factory, fixed_now):
+    login(client, user_factory(departments=("VEG",)))
+    p = proposal_factory(qty=24)
+    res = client.patch(f"/api/proposals/{p.id}", json={"quantity": 18, "reason": "weather", "reason_note": "雨予報"})
+    assert res.status_code == 200
+    body = res.json()
+    assert (body["proposed_qty"], body["original_qty"], body["is_adjusted"], body["adjust_reason"], body["adjust_note"]) == (
+        18, 24, True, "weather", "雨予報")
+    client.post(f"/api/proposals/{p.id}/approve", json={})
+    res = client.patch(f"/api/proposals/{p.id}", json={"quantity": 3, "reason": "other"})
+    assert res.status_code == 409 and res.json()["detail"] == "承認済みの提案は修正できません"
+
+
+@pytest.mark.db
+def test_approve_with_warning_requires_confirm(client, login, user_factory, proposal_factory, fixed_now):
+    u = user_factory(name="青果 一郎", departments=("VEG",))
+    login(client, u)
+    p = proposal_factory(warnings=["NO_INVENTORY"])
+    res = client.post(f"/api/proposals/{p.id}/approve", json={})
+    assert res.status_code == 422 and res.json()["detail"] == "警告を確認してください"
+    body = client.post(f"/api/proposals/{p.id}/approve", json={"confirm_warnings": True}).json()
+    assert (body["status"], body["approved_by_name"], body["approved_at"]) == (
+        "approved", "青果 一郎", "2026-10-16T10:00:00+09:00")
+
+
+@pytest.mark.db
+def test_cancel_after_deadline_is_409(client, login, user_factory, proposal_factory, fixed_now):
+    from tests.conftest import jst
+
+    login(client, user_factory(departments=("VEG",)))
+    p = proposal_factory(status="approved", deadline=jst(2026, 10, 16, 20))
+    fixed_now.set(jst(2026, 10, 16, 20))
+    res = client.post(f"/api/proposals/{p.id}/cancel-approval")
+    assert res.status_code == 409
+
+
+@pytest.mark.db
+def test_cancel_and_adopt_api(client, login, user_factory, proposal_factory, fixed_now):
+    login(client, user_factory(departments=("VEG",)))
+    p = proposal_factory(status="approved", qty=24, recalculated_qty=30)
+    body = client.post(f"/api/proposals/{p.id}/cancel-approval").json()
+    assert (body["status"], body["is_adjusted"], body["approved_by"]) == ("pending", True, None)
+    body = client.post(f"/api/proposals/{p.id}/adopt-recalculated").json()
+    assert (body["proposed_qty"], body["recalculated_qty"], body["is_adjusted"]) == (30, None, False)
+
+
+@pytest.mark.db
+def test_bulk_approve_api(client, login, user_factory, proposal_factory, fixed_now):
+    login(client, user_factory(departments=("VEG",)))
+    ok = proposal_factory()
+    warn = proposal_factory(warnings=["NO_WEATHER"], product_offset=1)
+    res = client.post("/api/proposals/approve-bulk", json={"ids": [ok.id, warn.id, 999999]})
+    assert res.status_code == 200
+    assert res.json() == {"approved_ids": [ok.id], "skipped": [
+        {"id": warn.id, "reason": "警告があるため一括承認から除外しました"}, {"id": 999999, "reason": "対象が見つかりません"}]}
+    assert client.post("/api/proposals/approve-bulk", json={"ids": []}).status_code == 422
+
+
+@pytest.mark.db
+def test_staff_cannot_touch_other_department(client, login, user_factory, proposal_factory, fixed_now):
+    login(client, user_factory(departments=("FISH",)))
+    p = proposal_factory()  # VEG の提案
+    assert client.post(f"/api/proposals/{p.id}/approve", json={}).status_code == 403
+    assert client.patch(f"/api/proposals/{p.id}", json={"quantity": 3, "reason": "other"}).status_code == 403
+    assert client.post(f"/api/proposals/{p.id}/cancel-approval").status_code == 403
+    assert client.post(f"/api/proposals/{p.id}/adopt-recalculated").status_code == 403
+    res = client.post("/api/proposals/approve-bulk", json={"ids": [p.id]})
+    assert res.status_code == 403
+    assert client.get("/api/proposals", params={"department_code": "VEG"}).status_code == 403
+
+
+@pytest.mark.db
+def test_bulk_with_mixed_departments_approves_nothing(client, login, user_factory, proposal_factory, product_factory,
+                                                     fixed_now, db):
+    login(client, user_factory(departments=("FISH",)))
+    own = proposal_factory(product_factory(code="FISH-001", department="FISH"))
+    other = proposal_factory()  # VEG
+    assert client.post("/api/proposals/approve-bulk", json={"ids": [own.id, other.id]}).status_code == 403
+    db.refresh(own)
+    assert own.status == "pending"
+
+
+@pytest.mark.db
+def test_manager_can_operate_any_department(client, login, user_factory, proposal_factory, fixed_now):
+    login(client, user_factory(role="manager", departments=()))
+    p = proposal_factory()
+    assert client.post(f"/api/proposals/{p.id}/approve", json={}).status_code == 200
+
+
+@pytest.mark.db
+def test_actions_require_csrf_header(app, user_factory, proposal_factory, fixed_now):
+    from fastapi.testclient import TestClient
+
+    c = TestClient(app)
+    u = user_factory(departments=("VEG",))
+    c.post("/api/auth/login", json={"login_id": u.login_id, "password": "pass1234"}, headers={"X-Requested-With": "smdx"})
+    p = proposal_factory()
+    assert c.post(f"/api/proposals/{p.id}/approve", json={}).status_code == 403
