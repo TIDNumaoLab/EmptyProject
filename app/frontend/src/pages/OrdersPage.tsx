@@ -85,6 +85,7 @@ export default function OrdersPage() {
     });
   }
 
+  const recalculating = job?.status === "running";
   const cutoff = settings?.[`order_cutoff.${department}`];
 
   return (
@@ -109,7 +110,7 @@ export default function OrdersPage() {
             ))}
           </select>
         </label>
-        <BulkApproveButton count={selected.size} onClick={() => void bulk()} />
+        <BulkApproveButton count={selected.size} disabled={recalculating} onClick={() => void bulk()} />
       </div>
       <FreshnessBar freshness={data?.freshness ?? null} job={job} onRecalculate={() => void recalculate()} />
       {data?.notice && <div className={styles.notice}>{data.notice}</div>}
@@ -118,6 +119,7 @@ export default function OrdersPage() {
           proposals={data.proposals}
           selected={selected}
           skipped={skipped}
+          approveLocked={recalculating}
           onSelect={(id, checked) => {
             const next = new Set(selected);
             if (checked) next.add(id);

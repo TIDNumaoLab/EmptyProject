@@ -13,6 +13,8 @@ interface Props {
   selected: boolean;
   // 一括承認で除外された理由
   skippedReason: string | null;
+  // 再計算中は承認できない(表示中の数量がまもなく置き換わるため)
+  approveLocked?: boolean;
   onSelect(checked: boolean): void;
   onSave(quantity: number, reason: AdjustReason, note: string | undefined): Promise<void>;
   onApprove(): void;
@@ -33,7 +35,7 @@ function weatherText(p: Proposal): string {
   return parts.join(" ");
 }
 
-export default function ProposalRow({ proposal: p, selected, skippedReason, onSelect, onSave, onApprove, onCancel, onAdopt }: Props) {
+export default function ProposalRow({ proposal: p, selected, skippedReason, approveLocked = false, onSelect, onSave, onApprove, onCancel, onAdopt }: Props) {
   const [qty, setQty] = useState(String(p.proposed_qty));
   const [reason, setReason] = useState<AdjustReason | "">("");
   const [note, setNote] = useState("");
@@ -134,7 +136,7 @@ export default function ProposalRow({ proposal: p, selected, skippedReason, onSe
             </button>
           )}
           {pending && !dirty && (
-            <button type="button" className={pageStyles.secondary} onClick={onApprove}>
+            <button type="button" className={pageStyles.secondary} onClick={onApprove} disabled={approveLocked}>
               承認
             </button>
           )}

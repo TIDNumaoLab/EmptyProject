@@ -136,3 +136,13 @@ test("cancel and adopt call the api", async () => {
   expect(proposalsApi.cancelApproval).toHaveBeenCalledWith(1);
   expect(proposalsApi.adoptRecalculated).toHaveBeenCalledWith(1);
 });
+
+test("approve buttons are disabled while recalculating", async () => {
+  // 再計算中は表示中の数量がまもなく置き換わるため、見えていない数量を承認しないよう承認を止める
+  vi.mocked(proposalsApi.listProposals).mockResolvedValue(listResponse([proposal()], running(0, 1)));
+  vi.mocked(proposalsApi.getJob).mockReturnValue(new Promise(() => {}));
+  await renderPage(<OrdersPage />, staff(VEG), "発注");
+  expect(await screen.findByRole("button", { name: "承認" })).toBeDisabled();
+  await userEvent.setup().click(screen.getByLabelText("キャベツ を選択"));
+  expect(screen.getByRole("button", { name: "一括承認" })).toBeDisabled();
+});
