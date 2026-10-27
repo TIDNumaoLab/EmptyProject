@@ -11,3 +11,26 @@ h1 {
   font-size: 1.4rem;
   margin-top: 0;
 }
+
+/* 印刷(承認済み発注リスト): A4縦。サイドバー・絞り込み・ボタンは出さない */
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
+
+@media print {
+  body {
+    min-width: 0;
+    background: #fff;
+  }
+
+  nav[aria-label="メニュー"],
+  .no-print,
+  button {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+}
