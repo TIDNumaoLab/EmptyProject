@@ -1,0 +1,184 @@
+"""提案一覧・手動再計算・ジョブ進捗(F-08、F-10)。"""
+from collections.abc import Sequence
+from datetime import date, datetime
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import select, tuple_
+from sqlalchemy.orm import Session
+
+from smdx_api.api.deps import (
+    NOT_FOUND,
+    current_user,
+    department_for,
+    get_compute_services,
+    get_db,
+    get_job_launcher,
+)
+from smdx_api.auth.permissions import Principal
+from smdx_api.clock import get_now
+from smdx_api.db.models import Department, Product, Proposal, ProposalJob, User
+from smdx_api.proposals.basis import BASIS_KEYS
+from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets, department_products, fresh_target_dates
+from smdx_api.proposals.deadlines import apply_deadlines
+from smdx_api.proposals.jobs import JOB_TIMEOUT, start_or_get_job
+from smdx_api.proposals.schedule import TargetOutOfRange, check_target_range
+from smdx_api.proposals.service import JobLauncher, job_target_date, needs_auto_recalc
+from smdx_api.schemas.proposals import (
+    FreshnessOut,
+    JobOut,
+    JobResponse,
+    ProposalListOut,
+    ProposalOut,
+    RecalculateIn,
+    StatusFilter,
+)
+from smdx_api.settings.service import load_settings
+
+router = APIRouter(prefix="/api/proposals")
+
+WRONG_BUSINESS = "部門と業務の組合せが正しくありません"
+
+
+def order_department(code: str, p: Principal, db: Session) -> Department:
+    """生鮮(発注)の部門を引く。惣菜の製造計画は段階5で同じ API に加える。"""
+    department = department_for(code, p, db)
+    if department.business_type != "order":
+        raise HTTPException(status_code=400, detail=WRONG_BUSINESS)
+    return department
+
+
+def _targets(target_date: date | None, now: datetime) -> FreshTargets:
+    if target_date is not None:
+        try:
+            check_target_range(target_date, now.date())
+        except TargetOutOfRange as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+    return FreshTargets(target_date)
+
+
+def proposals_out(db: Session, proposals: Sequence[Proposal]) -> list[ProposalOut]:
+    """提案を応答の形にする(商品・部門・承認者の名前を引き、根拠を平坦に並べる)。"""
+    if not proposals:
+        return []
+    products = {p.id: p for p in db.scalars(select(Product).where(Product.id.in_({x.product_id for x in proposals})))}
+    departments = {d.id: d.code for d in db.scalars(select(Department))}
+    approver_ids = {x.approved_by for x in proposals if x.approved_by is not None}
+    names = {u.id: u.name for u in db.scalars(select(User).where(User.id.in_(approver_ids)))} if approver_ids else {}
+    out = []
+    for x in proposals:
+        product = products[x.product_id]
+        basis = {k: (x.basis or {}).get(k) for k in BASIS_KEYS}
+        out.append(ProposalOut(
+            id=x.id, department_code=departments[x.department_id], product_code=product.product_code,
+            product_name=product.name, target_date=x.target_date, time_band=x.time_band, proposed_qty=x.proposed_qty,
+            original_qty=x.original_qty, recalculated_qty=x.recalculated_qty, is_adjusted=x.is_adjusted,
+            adjust_reason=x.adjust_reason, adjust_note=x.adjust_note, status=x.status, deadline=x.deadline,
+            approved_by=x.approved_by, approved_by_name=names.get(x.approved_by), approved_at=x.approved_at,
+            warnings=list(x.warnings or []), order_unit=product.order_unit, calculated_at=x.calculated_at,
+            created_at=x.created_at, updated_at=x.updated_at, **basis,
+        ))
+    return out
+
+
+def _parse(v: str | None) -> datetime | None:
+    return datetime.fromisoformat(v) if v else None
+
+
+def _freshness(proposals: Sequence[Proposal]) -> FreshnessOut:
+    def latest(values):
+        values = [v for v in values if v is not None]
+        return max(values) if values else None
+
+    return FreshnessOut(
+        calculated_at=latest(p.calculated_at for p in proposals),
+        weather_fetched_at=latest(_parse((p.basis or {}).get("weather_fetched_at")) for p in proposals),
+        inventory_based_at=latest(_parse((p.basis or {}).get("inventory_based_at")) for p in proposals),
+    )
+
+
+def _job_out(job: ProposalJob) -> JobOut:
+    return JobOut(id=job.id, status=job.status, processed=job.processed, total=job.total, error=job.error)
+
+
+def _running_job(db: Session, department: Department, target_date: date, now: datetime) -> ProposalJob | None:
+    return db.scalar(select(ProposalJob).where(
+        ProposalJob.department_id == department.id, ProposalJob.target_date == target_date,
+        ProposalJob.status == "running", ProposalJob.started_at >= now - JOB_TIMEOUT,
+    ).order_by(ProposalJob.started_at.desc()).limit(1))
+
+
+def _shown(db: Session, department: Department, now: datetime, settings, targets: FreshTargets,
+           status: str | None) -> list[Proposal]:
+    q = select(Proposal).join(Product, Product.id == Proposal.product_id).where(Proposal.department_id == department.id)
+    if targets.explicit_date is not None:
+        q = q.where(Proposal.target_date == targets.explicit_date)
+    else:
+        # 既定表示は各商品の最も早い納品日の提案だけ
+        pairs = list(fresh_target_dates(department_products(db, department), now, settings, targets).items())
+        if not pairs:
+            return []
+        q = q.where(tuple_(Proposal.product_id, Proposal.target_date).in_(pairs))
+    if status is not None:
+        q = q.where(Proposal.status == status)
+    return list(db.scalars(q.order_by(Product.product_code, Proposal.time_band)))
+
+
+@router.get("", response_model=ProposalListOut)
+def list_proposals(
+    background_tasks: BackgroundTasks,
+    department_code: str,
+    target_date: date | None = None,
+    status: StatusFilter | None = None,
+    p: Principal = Depends(current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+    services: ComputeServices = Depends(get_compute_services),
+    launcher: JobLauncher = Depends(get_job_launcher),
+) -> ProposalListOut:
+    """既存の提案をすぐに返し、再計算が必要ならジョブを開始して併せて返す(詳細設計書「きっかけ」)。"""
+    department = order_department(department_code, p, db)
+    targets = _targets(target_date, now)
+    apply_deadlines(db, now, department.id)
+    db.commit()
+    settings = load_settings(db)
+    job_date = job_target_date(department, now, settings, targets)
+    job = None
+    if needs_auto_recalc(db, department, now, settings, services, targets):
+        total = len(fresh_target_dates(department_products(db, department), now, settings, targets))
+        job, created = start_or_get_job(db, department, job_date, now, total)
+        if created:
+            launcher.launch(background_tasks, job.id, targets)
+    else:
+        job = _running_job(db, department, job_date, now)
+    shown = _shown(db, department, now, settings, targets, status)
+    return ProposalListOut(proposals=proposals_out(db, shown), freshness=_freshness(shown),
+                           job=_job_out(job) if job else None, notice=None)
+
+
+@router.post("/recalculate", response_model=JobResponse)
+def recalculate(
+    body: RecalculateIn,
+    background_tasks: BackgroundTasks,
+    p: Principal = Depends(current_user),
+    db: Session = Depends(get_db),
+    now: datetime = Depends(get_now),
+    launcher: JobLauncher = Depends(get_job_launcher),
+) -> JobResponse:
+    """手動再計算。判定を省略して開始する(実行中があればそれを返す)。"""
+    department = order_department(body.department_code, p, db)
+    targets = _targets(body.target_date, now)
+    settings = load_settings(db)
+    total = len(fresh_target_dates(department_products(db, department), now, settings, targets))
+    job, created = start_or_get_job(db, department, job_target_date(department, now, settings, targets), now, total)
+    if created:
+        launcher.launch(background_tasks, job.id, targets)
+    return JobResponse(job=_job_out(job))
+
+
+@router.get("/jobs/{job_id}", response_model=JobOut)
+def get_job(job_id: int, p: Principal = Depends(current_user), db: Session = Depends(get_db)) -> JobOut:
+    job = db.get(ProposalJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=NOT_FOUND)
+    department_for(db.get(Department, job.department_id).code, p, db)
+    return _job_out(job)

@@ -323,3 +323,13 @@ def job_session_factory(db):
         return Session(bind=conn, join_transaction_mode="create_savepoint")
 
     return make
+
+
+@pytest.fixture
+def test_services(app, baseline_services, job_session_factory):
+    """提案のAPIの試験用: 計算はベースライン・偽の気象、ジョブは試験の DB の中で動かす。"""
+    from smdx_api.api.deps import get_compute_services, get_session_factory
+
+    app.dependency_overrides[get_compute_services] = lambda: baseline_services
+    app.dependency_overrides[get_session_factory] = lambda: job_session_factory
+    return baseline_services
