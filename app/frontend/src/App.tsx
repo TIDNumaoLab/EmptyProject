@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { NAV_ITEMS, homePath } from "./auth/routes";
 import Sidebar from "./components/Sidebar";
 import LoginPage from "./pages/LoginPage";
+import OrdersPage from "./pages/OrdersPage";
 import CalendarPage from "./pages/CalendarPage";
 import ImportsPage from "./pages/ImportsPage";
 import InventoryPage from "./pages/InventoryPage";
@@ -13,6 +14,7 @@ import PromotionsPage from "./pages/PromotionsPage";
 
 // 作成済みの画面。無い画面は PlaceholderPage(準備中)を出す
 const PAGES: Record<string, () => JSX.Element> = {
+  "/orders": OrdersPage,
   "/imports": ImportsPage,
   "/inventory": InventoryPage,
   "/promotions": PromotionsPage,

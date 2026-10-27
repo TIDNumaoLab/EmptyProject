@@ -1,0 +1,55 @@
+/* 発注画面の提案の表・行・バッジの見た目 */
+.warned {
+  background: #fff6e0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 1px 4px 1px 0;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  background: #e3ecf3;
+  color: #24506b;
+}
+
+.warning {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 1px 4px 1px 0;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  background: #fbe3c2;
+  color: #7a4300;
+}
+
+.diff {
+  color: #8a3b00;
+  font-weight: bold;
+  margin-right: 6px;
+}
+
+.qty {
+  width: 72px;
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.skipped {
+  color: #8a1c1c;
+  font-size: 0.8rem;
+}
+
+.freshness {
+  color: #44525c;
+  font-size: 0.9rem;
+}
+
+.cutoff {
+  font-weight: bold;
+  color: #2e6e94;
+}

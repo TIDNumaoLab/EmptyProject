@@ -1,0 +1,70 @@
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, expect, test, vi } from "vitest";
+import * as proposalsApi from "../src/api/proposals";
+import { useProposals } from "../src/hooks/useProposals";
+import { listResponse, proposal, running } from "./proposalFixtures";
+
+vi.mock("../src/api/proposals");
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+test("useProposals polls running job then reloads", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.mocked(proposalsApi.listProposals)
+    .mockResolvedValueOnce(listResponse([], running(0, 1)))
+    .mockResolvedValueOnce(listResponse([proposal()]));
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null });
+
+  const { result } = renderHook(() => useProposals({ departmentCode: "VEG" }, { pollMs: 2000 }));
+  await waitFor(() => expect(result.current.job?.status).toBe("running"));
+  expect(result.current.data?.proposals).toEqual([]);
+  expect(proposalsApi.listProposals).toHaveBeenCalledWith({ departmentCode: "VEG" });
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  await waitFor(() => expect(result.current.data?.proposals).toHaveLength(1));
+  expect(proposalsApi.getJob).toHaveBeenCalledWith(5);
+  expect(result.current.job).toBeNull();
+  expect(proposalsApi.listProposals).toHaveBeenCalledTimes(2);
+});
+
+test("failed job shows error and stops polling", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.mocked(proposalsApi.listProposals).mockResolvedValue(listResponse([proposal()], running()));
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "failed", processed: 0, total: 6, error: "計算に失敗" });
+
+  const { result } = renderHook(() => useProposals({ departmentCode: "VEG" }, { pollMs: 1000 }));
+  await waitFor(() => expect(result.current.job?.status).toBe("running"));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  await waitFor(() => expect(result.current.error).toBe("最新の予測の計算に失敗しました: 計算に失敗"));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+  });
+  expect(proposalsApi.getJob).toHaveBeenCalledTimes(1);
+  // 既存の提案は表示したまま
+  expect(result.current.data?.proposals).toHaveLength(1);
+});
+
+test("recalculate starts polling the returned job", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.mocked(proposalsApi.listProposals).mockResolvedValue(listResponse([proposal()]));
+  vi.mocked(proposalsApi.recalculate).mockResolvedValue(running(0, 1));
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null });
+
+  const { result } = renderHook(() => useProposals({ departmentCode: "VEG", targetDate: "2026-10-20" }));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  await act(async () => {
+    await result.current.recalculate();
+  });
+  expect(proposalsApi.recalculate).toHaveBeenCalledWith("VEG", "2026-10-20");
+  expect(result.current.job?.status).toBe("running");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  await waitFor(() => expect(result.current.job).toBeNull());
+});

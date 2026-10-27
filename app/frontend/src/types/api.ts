@@ -81,3 +81,93 @@ export interface CalendarDay {
   kind: "holiday" | "event";
   name: string;
 }
+
+export type ProposalStatus = "pending" | "approved" | "confirmed" | "expired";
+export type WarningCode = "NO_INVENTORY" | "NO_HISTORY" | "NO_WEATHER" | "STALE_POS";
+export type AdjustReason = "weather" | "promotion" | "inventory" | "other";
+
+// 提案(詳細設計書「API仕様」の提案(proposal)の項目)。根拠(basis)は平坦に並ぶ
+export interface Proposal {
+  id: number;
+  department_code: string;
+  product_code: string;
+  product_name: string;
+  target_date: string;
+  time_band: number | null;
+  proposed_qty: number;
+  original_qty: number;
+  recalculated_qty: number | null;
+  is_adjusted: boolean;
+  adjust_reason: AdjustReason | null;
+  adjust_note: string | null;
+  status: ProposalStatus;
+  deadline: string;
+  approved_by: number | null;
+  approved_by_name: string | null;
+  approved_at: string | null;
+  warnings: WarningCode[];
+  order_unit: number;
+  calculated_at: string;
+  created_at: string;
+  updated_at: string;
+  predicted_qty: number | null;
+  model_version: string | null;
+  is_baseline: boolean | null;
+  weather_code: number | null;
+  weather_label: string | null;
+  temperature: number | null;
+  precipitation: number | null;
+  precipitation_probability: number | null;
+  is_holiday: boolean | null;
+  is_event_day: boolean | null;
+  holiday_name: string | null;
+  is_promotion: boolean | null;
+  sales_lag_7d: number | null;
+  inventory_qty: number | null;
+  inventory_based_at: string | null;
+  backlog_qty: number | null;
+  carry_over_qty: number | null;
+  expected_sales_qty: number | null;
+  display_stock_qty: number | null;
+  weather_fetched_at: string | null;
+}
+
+export interface Freshness {
+  calculated_at: string | null;
+  weather_fetched_at: string | null;
+  inventory_based_at: string | null;
+}
+
+export interface Job {
+  id: number;
+  status: "running" | "succeeded" | "failed";
+  processed: number;
+  total: number;
+  error: string | null;
+}
+
+export interface ProposalList {
+  proposals: Proposal[];
+  freshness: Freshness;
+  job: Job | null;
+  notice: string | null;
+}
+
+export interface BulkApproveResult {
+  approved_ids: number[];
+  skipped: { id: number; reason: string }[];
+}
+
+export interface ApprovedOrder {
+  product_code: string;
+  product_name: string;
+  target_date: string;
+  proposed_qty: number;
+  order_unit: number;
+  status: ProposalStatus;
+  approved_by_name: string | null;
+  approved_at: string | null;
+}
+
+// 設定(GET /api/settings の settings)。キーは詳細設計書「設定項目」
+export type Settings = Record<string, unknown>;
