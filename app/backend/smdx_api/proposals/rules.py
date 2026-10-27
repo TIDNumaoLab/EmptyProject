@@ -1,0 +1,116 @@
+"""提案の操作の条件・期限経過の遷移・最新性判定。DB に依存しない。
+
+操作の条件は詳細設計書「提案の状態遷移」、最新性判定は「自動再計算の対象と判定」に従う。
+違反は StateError(API では 409)、入力の不備は InputError(422)。
+"""
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+from smdx_api.proposals.codes import BULK_EXCLUDED, Status
+
+
+class StateError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class InputError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+@dataclass(frozen=True)
+class ProposalState:
+    status: Status
+    is_adjusted: bool
+    deadline: datetime
+    warnings: tuple[str, ...]
+    recalculated_qty: int | None
+
+
+def check_adjust(s: ProposalState) -> None:
+    if s.status == "approved":
+        raise StateError("承認済みの提案は修正できません")
+    if s.status != "pending":
+        raise StateError("この提案は修正できません")
+
+
+def check_approve(s: ProposalState, confirm_warnings: bool) -> None:
+    if s.status != "pending":
+        raise StateError("未承認の提案ではありません")
+    if s.warnings and not confirm_warnings:
+        raise InputError("警告を確認してください")
+
+
+def bulk_skip_reason(s: ProposalState) -> str | None:
+    """一括承認で除外する理由。承認してよければ None。"""
+    if s.status != "pending":
+        return "未承認ではありません"
+    if set(s.warnings) & BULK_EXCLUDED:
+        return "警告があるため一括承認から除外しました"
+    return None
+
+
+def check_cancel(s: ProposalState, now: datetime) -> None:
+    if s.status != "approved":
+        raise StateError("承認済みの提案ではありません")
+    if now >= s.deadline:
+        raise StateError("期限を過ぎているため取り消せません")
+
+
+def check_adopt(s: ProposalState, now: datetime) -> None:
+    if s.recalculated_qty is None:
+        raise StateError("再計算値がありません")
+    if not (s.status == "pending" or (s.status == "approved" and now < s.deadline)):
+        raise StateError("この提案には再計算値を採用できません")
+
+
+def deadline_transition(s: ProposalState, now: datetime) -> Status | None:
+    """期限(ちょうどを含む)を過ぎたときの遷移先。未承認は期限切れ、承認済みは確定。"""
+    if now < s.deadline:
+        return None
+    if s.status == "pending":
+        return "expired"
+    if s.status == "approved":
+        return "confirmed"
+    return None
+
+
+def is_protected(s: ProposalState) -> bool:
+    """自動では数量を変えない提案(修正あり・承認取消後の未承認、承認済み)。"""
+    return (s.status == "pending" and s.is_adjusted) or s.status == "approved"
+
+
+@dataclass(frozen=True)
+class FreshnessContext:
+    # その部門の在庫・POSの取込、在庫の手入力、陳列残数の入力、提案の確定のうち最新の日時
+    data_changed_at: datetime | None
+    # 特売・カレンダーの最終変更日時(settings の internal.events_changed_at)
+    events_changed_at: datetime | None
+    current_model_version: str
+    stale_hours: float
+
+
+@dataclass(frozen=True)
+class ProposalFreshness:
+    calculated_at: datetime
+    model_version: str
+    weather_fetched_at: datetime | None
+
+
+def is_stale(p: ProposalFreshness, ctx: FreshnessContext, now: datetime) -> bool:
+    """作成済みの提案を再計算すべきか(未作成の判定は呼び出し側で行う)。
+
+    予報なし(NO_WEATHER)で作った提案は予報の取得日時が無いため、経過したものとみなして次の機会に取り直す。
+    """
+    if ctx.data_changed_at is not None and ctx.data_changed_at > p.calculated_at:
+        return True
+    if ctx.events_changed_at is not None and ctx.events_changed_at > p.calculated_at:
+        return True
+    if p.model_version != ctx.current_model_version:
+        return True
+    if p.weather_fetched_at is None:
+        return True
+    return now - p.weather_fetched_at >= timedelta(hours=ctx.stale_hours)
