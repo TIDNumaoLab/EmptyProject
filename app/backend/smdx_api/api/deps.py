@@ -1,5 +1,6 @@
 """API の共通の依存関係(DBセッション、ログイン利用者、権限チェック)。"""
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from datetime import datetime
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
@@ -7,8 +8,11 @@ from sqlalchemy.orm import Session
 
 from smdx_api.auth.permissions import Principal, can_access_department
 from smdx_api.auth.service import load_principal
+from smdx_api.clock import get_now
 from smdx_api.db.models import Department
 from smdx_api.predictor.registry import ModelRegistry
+from smdx_api.proposals.compute_fresh import ComputeServices
+from smdx_api.proposals.service import JobLauncher
 from smdx_api.weather_client.client import WeatherClient
 
 UNAUTHORIZED = "ログインしてください"
@@ -31,6 +35,26 @@ def get_weather_client(request: Request) -> WeatherClient:
 
 def get_model_registry(request: Request) -> ModelRegistry:
     return request.app.state.model_registry
+
+
+def get_session_factory(request: Request) -> Callable[[], Session]:
+    """ジョブが応答の後に使うセッションの作り方(要求ごとのセッションとは別に開く)。"""
+    return request.app.state.session_factory
+
+
+def get_compute_services(
+    registry: ModelRegistry = Depends(get_model_registry), weather_client: WeatherClient = Depends(get_weather_client)
+) -> ComputeServices:
+    return ComputeServices(registry, weather_client)
+
+
+def get_job_launcher(
+    session_factory: Callable[[], Session] = Depends(get_session_factory),
+    services: ComputeServices = Depends(get_compute_services),
+    now: datetime = Depends(get_now),
+) -> JobLauncher:
+    # ジョブの計算時刻は要求を受けた時刻とする(計算日時が実際より前になる側にずれるので、その間の変更は次の判定で拾える)
+    return JobLauncher(session_factory, services, lambda: now)
 
 
 def current_user(request: Request, db: Session = Depends(get_db)) -> Principal:

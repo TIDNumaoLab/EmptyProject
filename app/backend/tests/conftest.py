@@ -312,3 +312,14 @@ def model_services(tmp_path):
     from tests.fakes import FakeWeatherClient
 
     return ComputeServices(const_registry(tmp_path), FakeWeatherClient())
+
+
+@pytest.fixture
+def job_session_factory(db):
+    """ジョブ(run_job)が使うセッション工場。試験の db と同じ接続・トランザクションの中のセーブポイントで動く。"""
+    conn = db.connection()
+
+    def make() -> Session:
+        return Session(bind=conn, join_transaction_mode="create_savepoint")
+
+    return make
