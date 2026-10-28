@@ -90,3 +90,46 @@ test("job progress failure is retried at the next interval", async () => {
   expect(proposalsApi.getJob).toHaveBeenCalledTimes(2);
   expect(result.current.data?.proposals).toHaveLength(1);
 });
+
+test("job progress 4xx stops polling and shows the error", async () => {
+  // セッション切れ・ジョブが見つからない等は取り直しても直らない
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.mocked(proposalsApi.listProposals).mockResolvedValue(listResponse([proposal()], running(0, 1)));
+  vi.mocked(proposalsApi.getJob).mockRejectedValue({ response: { status: 401, data: { detail: "ログインしてください" } } });
+
+  const { result } = renderHook(() => useProposals({ departmentCode: "VEG" }, { pollMs: 1000 }));
+  await waitFor(() => expect(result.current.job?.status).toBe("running"));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  await waitFor(() => expect(result.current.error).toBe("最新の予測の進捗を確認できません: ログインしてください"));
+  expect(result.current.job).toBeNull();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+  });
+  expect(proposalsApi.getJob).toHaveBeenCalledTimes(1);
+});
+
+test("job progress stops after 5 consecutive network failures", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.mocked(proposalsApi.listProposals).mockResolvedValue(listResponse([proposal()], running(0, 1)));
+  vi.mocked(proposalsApi.getJob).mockRejectedValue({});
+
+  const { result } = renderHook(() => useProposals({ departmentCode: "VEG" }, { pollMs: 1000 }));
+  await waitFor(() => expect(result.current.job?.status).toBe("running"));
+  for (let i = 0; i < 4; i++) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+  }
+  expect(result.current.error).toBeNull();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  await waitFor(() => expect(result.current.error).toBe("最新の予測の進捗を確認できません: 通信に失敗しました。"));
+  expect(result.current.job).toBeNull();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+  });
+  expect(proposalsApi.getJob).toHaveBeenCalledTimes(5);
+});
