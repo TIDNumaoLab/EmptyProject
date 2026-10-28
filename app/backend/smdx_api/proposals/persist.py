@@ -68,7 +68,8 @@ def apply_computed(
         if p.status in ("confirmed", "expired"):
             pass
         elif is_protected(state_of(p)):
-            p.recalculated_qty = c.qty
+            # 今の提案数と同じなら差分は無い(差分と採用ボタンを出さない)
+            p.recalculated_qty = c.qty if c.qty != p.proposed_qty else None
         else:
             before = p.proposed_qty
             f = _forecast(db, c)

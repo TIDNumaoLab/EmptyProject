@@ -65,6 +65,15 @@ def test_persist_protected_only_sets_recalculated(db, status, adjusted, proposal
 
 
 @pytest.mark.db
+def test_persist_protected_same_value_clears_recalculated(db, proposal_factory):
+    # 再計算値が今の提案数と同じなら差分も採用も出さない(古い再計算値も消す)
+    p = proposal_factory(qty=20, is_adjusted=True, recalculated_qty=26, calculated_at=T0)
+    apply_computed(db, dept(db, "VEG"), [computed(p.product, 20)], T1)
+    db.refresh(p)
+    assert (p.proposed_qty, p.recalculated_qty) == (20, None)
+
+
+@pytest.mark.db
 @pytest.mark.parametrize("status", ["confirmed", "expired"])
 def test_persist_leaves_closed_untouched(db, status, proposal_factory):
     p = proposal_factory(qty=20, status=status, calculated_at=T0)
