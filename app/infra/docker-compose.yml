@@ -34,6 +34,8 @@ services:
       - "8000:8000"
     volumes:
       - ../backend:/app/backend
+      # 特徴量の共通パッケージも編集できる形で入れているので、変更をイメージの作り直しなしで反映する
+      - ../features:/app/features
     depends_on:
       db:
         condition: service_healthy

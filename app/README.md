@@ -8,12 +8,22 @@
 Python は 3.11 に統一する。uv で導入し、仮想環境は `app/.venv` の1つを全プロジェクトで共用する。
 以下はすべて `app/` をカレントにして実行する(Windows の Git Bash の例。Linux/macOS では `.venv/Scripts/python` を `.venv/bin/python` に読み替える)。
 
+uv が無い場合は、公式の手順で入れる(詳しくは `../設計書/開発環境構築マニュアル.md` の「uv のインストール」)。
+
 ```bash
-py -3.9 -m pip install --user uv          # uv が無い場合(PATH にあれば以降の `py -3.9 -m uv` は `uv` でよい)
-py -3.9 -m uv python install 3.11
-py -3.9 -m uv venv --python 3.11 .venv
-py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./features[dev]" -e "./backend[dev]"
+# Windows(PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+# Linux / macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
+
+```bash
+uv python install 3.11
+uv venv --python 3.11 .venv
+uv pip install --python .venv -c constraints.txt -e "./features[dev]" -e "./backend[dev]"
+```
+
+`uv` が PATH に無く `py -m uv` で動く場合は、以下の `uv` を `py -m uv` と読み替える。
 
 ライブラリのバージョンは `constraints.txt` で固定している。インストールには必ず `-c constraints.txt` を付ける。
 
@@ -23,7 +33,7 @@ py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./features[dev]"
 同じ終端日・日数・シードなら同じ内容になる。出力先 `sample_data/output/` は Git 管理外。
 
 ```bash
-py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./sample_data[dev]"
+uv pip install --python .venv -c constraints.txt -e "./sample_data[dev]"
 .venv/Scripts/python -m smdx_sample --out sample_data/output --end-date 2026-10-15
 ```
 
@@ -35,14 +45,19 @@ py -3.9 -m uv pip install --python .venv -c constraints.txt -e "./sample_data[de
 入力はサンプル出力と同じ形式のフォルダ(実データは同じ形式に書き出して使う)。
 
 ```bash
-py -3.9 -m uv pip install --python .venv -c constraints.txt -e ./features -e ./backend -e ./sample_data -e "./model_training[dev]"
+uv pip install --python .venv -c constraints.txt -e ./features -e ./backend -e ./sample_data -e "./model_training[dev]"
 .venv/Scripts/python -m smdx_training run --data sample_data/output --granularity daily --out model_training/output
 .venv/Scripts/python -m smdx_training run --data sample_data/output --granularity time_band --out model_training/output
 ```
 
 - 直近4週間を検証期間とし、ランダムフォレストと LightGBM をベースライン(前週同曜日)と WAPE で比べる。評価レポート `report-{版}.md` は毎回出力する。
 - ベースラインを上回るモデルがあれば `daily.joblib` / `time_band.joblib` を出力する。無ければ「採用しません」と表示し、既存のファイルは残す。
-- 評価レポートでベースラインを上回ることを確認してから、`backend/models/` にコピーして差し替える。本体はファイルの更新を検知して読み直す(再起動は不要)。
+- 評価レポートでベースラインを上回ることを確認してから、`backend/models/` に差し替える。本体はファイルの更新を検知して読み直す(再起動は不要)。書きかけのファイルを読み込まないよう、同じフォルダに別名でコピーしてから名前を変える。
+
+```bash
+cp model_training/output/daily.joblib backend/models/daily.joblib.new
+mv backend/models/daily.joblib.new backend/models/daily.joblib
+```
 - 店舗の設定(画面の「設定」)を既定から変えている場合は、同じ値を `--time-bands 10,11,14,17`・`--business-hours 10-20`・`--safety-factor 1.1` で指定する。
 - 時間帯の区切りの設定を変えたら、その区切りを `--time-bands` に指定して時間帯別モデルを作り直す(区切りが違うモデルは使わず、ベースラインで予測する)。
 
@@ -74,7 +89,8 @@ docker compose up -d --build
 
 - 画面: http://localhost:5173/login
 - 本体API: http://localhost:8000(Swagger UI は /docs、稼働確認は /health)
-- 試験用のデータベースを作る場合: `docker compose exec db createdb -U postgres smdx_test`(`TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/smdx_test`)
+- 試験用のデータベースを作る場合: `docker compose exec db createdb -U postgres smdx_test`(`TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/smdx_test`)。Docker を使わない場合は `../設計書/開発環境構築マニュアル.md` の開発用 DB と試験用 DB の手順で作る
+- `backend/`・`features/` はコンテナにマウントしているので、コードを変えると本体が自動で再起動する(依存ライブラリを変えたときはイメージを作り直す)
 - データは Docker ボリューム `db-data` に残る。`docker compose down -v` はデータを消すので注意する。
 
 ### Docker を使わない場合
@@ -124,6 +140,7 @@ Open-Meteo の過去実績API から、店舗の位置(`STORE_LATITUDE`・`STORE
 
 `smdx_sample` で生成したフォルダを一式投入する(商品マスタ・POS・在庫・廃棄・気象の過去実績・行事日・特売)。何度実行しても同じ状態になる。祝日は `import_holidays` で別に入れる。
 calendar.csv にある日付の行事日は置き換えるため、同じ日に画面から登録した行事日は消える(開発・評価用のサンプル投入向けの動作)。
+気象は `fetch_weather_actuals` と同じ表(weather_actuals、source=archive)に入れるため、同じ期間の時刻は後から実行した方で上書きされる。
 
 ```bash
 ../.venv/Scripts/python -m smdx_api.commands import_sample --folder ../sample_data/output
