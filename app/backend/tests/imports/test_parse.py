@@ -25,10 +25,10 @@ POS_HEADER = "sales_date,sales_time,product_code,quantity\n"
 
 
 def test_pos_with_bom_and_hour_bucketing():
-    data = ("﻿" + POS_HEADER + "2026-10-15,10:23,VEG-001,3\n2026-10-15,,VEG-001,5\n").encode("utf-8")
+    data = ("﻿" + POS_HEADER + "2026-10-15,10:23,VEG-001,3\n2026-10-16,,VEG-001,5\n").encode("utf-8")
     r = parse_csv("pos", data, CTX)
     assert r.errors == []
-    assert r.rows == [PosRow(date(2026, 10, 15), 10, 1, 3), PosRow(date(2026, 10, 15), None, 1, 5)]
+    assert r.rows == [PosRow(date(2026, 10, 15), 10, 1, 3), PosRow(date(2026, 10, 16), None, 1, 5)]
 
 
 @pytest.mark.parametrize("line,reason", [
@@ -128,3 +128,33 @@ def test_products_values_must_fit_db_columns(line, reason):
 def test_quantity_must_fit_integer_column():
     r = parse_csv("pos", (POS_HEADER + "2026-10-15,,VEG-001,4900000000\n").encode(), CTX)
     assert r.errors == [RowError(2, "値が範囲外です: quantity")]
+
+
+
+PROD_HEADER = "product_code,product_name,department_code,order_unit,lead_time_days,can_carry_over,cost_price,selling_price\n"
+PRODUCT_CTX = ParseContext(products={}, department_code=None, known_departments={"VEG"})
+
+
+def test_newline_inside_quotes_keeps_value_and_line_numbers():
+    # 引用符の中の改行は値の一部。エラーの行番号はファイル上の行番号(PR #2 指摘4)
+    data = (PROD_HEADER + 'VEG-001,"キャベツ\n(大)",VEG,6,1,1,,\nVEG-002,x,VEG,0,1,1,,\n').encode()
+    r = parse_csv("products", data, PRODUCT_CTX)
+    assert r.rows[0].name == "キャベツ\n(大)"
+    assert r.errors == [RowError(4, "値が範囲外です: order_unit")]
+
+
+def test_duplicate_header_rejects_file():
+    # 同じ列名が2つあると、どちらを使うか決められない(PR #2 指摘5)
+    data = b"sales_date,sales_time,product_code,quantity,quantity\n2026-10-15,,VEG-001,1,2\n"
+    with pytest.raises(FileFormatError, match="見出し行に同じ列名があります: quantity"):
+        parse_csv("pos", data, CTX)
+
+
+def test_pos_daily_and_hourly_rows_of_same_day_are_errors():
+    # 同じ日・同じ商品に日計と時刻つきが混在すると二重に数えるため、その日・商品の行をすべてエラーにする(PR #2 指摘6)
+    data = (POS_HEADER + "2026-10-15,,VEG-001,10\n2026-10-15,10:00,VEG-001,4\n2026-10-16,,VEG-001,3\n"
+            "2026-10-15,11:00,VEG-001,1\n").encode()
+    r = parse_csv("pos", data, CTX)
+    assert r.rows == [PosRow(date(2026, 10, 16), None, 1, 3)]
+    reason = "同じ日・商品に日計の行と時刻つきの行が混在しています"
+    assert r.errors == [RowError(2, reason), RowError(3, reason), RowError(5, reason)]

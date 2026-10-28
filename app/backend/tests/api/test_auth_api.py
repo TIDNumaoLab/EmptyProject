@@ -15,6 +15,11 @@ def test_login_body_is_validated(client):
     assert client.post("/api/auth/login", json={"login_id": "a"}).status_code == 422
 
 
+def test_login_password_has_max_length(client):
+    # 極端に長いパスワードで argon2 の計算をさせない(PR #1 指摘6)
+    assert client.post("/api/auth/login", json={"login_id": "a", "password": "x" * 257}).status_code == 422
+
+
 @pytest.mark.db
 def test_login_me_logout(client, user_factory):
     u = user_factory(role="staff", departments=("VEG", "DELI"))

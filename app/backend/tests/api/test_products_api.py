@@ -18,7 +18,7 @@ def test_products_list_filters_department_and_inactive(client, login, user_facto
     rows = client.get("/api/products", params={"department_code": "VEG"}).json()
     assert [p["product_code"] for p in rows] == ["VEG-001", "VEG-002"]
     assert rows[1] == {
-        "product_code": "VEG-002", "name": "トマト", "department_code": "VEG", "order_unit": 4, "lead_time_days": 1,
+        "product_code": "VEG-002", "name": "トマト", "department_code": "VEG", "department_name": "青果", "order_unit": 4, "lead_time_days": 1,
         "can_carry_over": True, "cost_price": 120.0, "selling_price": 198.5, "is_active": True,
     }
     assert len(client.get("/api/products").json()) == 3

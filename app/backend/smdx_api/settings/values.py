@@ -95,7 +95,8 @@ def _resolve_hours(stored: Mapping[str, Any]) -> tuple[time, time]:
 def _resolve_bands(stored: Mapping[str, Any], open_: time, close: time) -> list[int]:
     bands = stored.get("deli_time_bands")
     if bands is None:
-        bands = [open_.hour] + [b for b in DEFAULT_LATER_BANDS if b > open_.hour]
+        # 既定の区切りは開店時刻に追従し、閉店時刻以後に始まるものは除く
+        bands = [open_.hour] + [b for b in DEFAULT_LATER_BANDS if open_.hour < b and time(b) < close]
     return _validate_bands(bands, open_, close)
 
 

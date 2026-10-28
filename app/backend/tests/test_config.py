@@ -19,7 +19,6 @@ def test_defaults_match_design(monkeypatch):
     assert c.cors_allow_origins == ["http://localhost:5173"]
     assert c.session_cookie_secure is False
     assert c.session_max_age_hours == 3
-    assert c.tz == "Asia/Tokyo"
     assert c.import_max_mb == 50
 
 

@@ -25,7 +25,11 @@ def _decode(data: bytes) -> str:
     try:
         return data.decode("utf-8-sig")
     except UnicodeDecodeError:
+        pass
+    try:
         return data.decode("cp932")
+    except UnicodeDecodeError:
+        raise CommandError("文字コードを読み取れません(UTF-8 か Shift_JIS のファイルを指定してください)") from None
 
 
 def parse_holidays(data: bytes) -> list[tuple[date, str]]:
@@ -44,6 +48,9 @@ def parse_holidays(data: bytes) -> list[tuple[date, str]]:
         except ValueError:
             raise CommandError(f"{line_no}行目: 日付の形式が不正です(YYYY/M/D,名称)") from None
         rows.append((day, name[:64]))
+    if not rows:
+        # 空のファイルで登録済みの祝日をすべて消さないようにする
+        raise CommandError("祝日が1件もありません。ファイルを確かめてください")
     return rows
 
 

@@ -108,3 +108,11 @@ def test_flat_has_all_keys_and_excludes_internal():
     assert flat["order_cutoff.VEG"] == "20:00" and "order_cutoff.DELI" not in flat
     assert flat["deli_production_start"] == {"10": "09:00", "11": "10:00", "14": "13:00", "17": "16:00"}
     assert all(not k.startswith("internal.") for k in flat)
+
+
+def test_close_at_17_with_default_bands_is_valid():
+    # 時間帯の区切りを保存していなければ、閉店時刻以後に始まる既定の区切り(17時)を除く(PR #1 指摘4)
+    out = validate_changes({"business_hours": {"open": "10:00", "close": "17:00"}}, {}, DEPTS)
+    s = resolve(out, DEPTS)
+    assert s.deli_time_bands == [10, 11, 14]
+    assert s.band_end(14) == time(17)

@@ -33,3 +33,15 @@ def test_import_holidays_replaces_only_holidays(db, fixed_now):
     kinds = dict(db.execute(select(CalendarDay.kind, func.count()).group_by(CalendarDay.kind)).all())
     assert kinds == {"holiday": 2, "event": 1}
     assert read_internal_datetime(db, EVENTS_CHANGED_KEY) == fixed_now.value
+
+
+@pytest.mark.parametrize("data", [b"", "国民の祝日・休日月日,国民の祝日・休日名称\n".encode("cp932")])
+def test_parse_holidays_rejects_empty(data):
+    # 祝日が1件も無いファイルで、登録済みの祝日を消さない(PR #2 指摘7)
+    with pytest.raises(CommandError, match="祝日が1件もありません"):
+        parse_holidays(data)
+
+
+def test_parse_holidays_rejects_undecodable():
+    with pytest.raises(CommandError, match="文字コードを読み取れません"):
+        parse_holidays(b"\x82\xa0\xff\xfe\x80\x81,\x82\n")

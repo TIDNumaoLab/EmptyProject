@@ -23,6 +23,7 @@ class PromotionOut(BaseModel):
     product_code: str
     product_name: str
     department_code: str
+    department_name: str
     start_date: date
     end_date: date
     description: str

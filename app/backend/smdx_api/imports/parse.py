@@ -2,7 +2,7 @@
 
 不正な行(必須欠落、型不正、未登録の商品コード、負の数量、取込先の部門と異なる商品)はスキップし、
 行番号(見出し行を1行目とした番号)と理由を返す。取込全体は止めない。
-ファイル全体が読めない場合(UTF-8 でない、見出し行・必須列が無い)は FileFormatError。
+ファイル全体が読めない場合(UTF-8 でない、見出し行・必須列が無い、見出しに同じ列名がある)は FileFormatError。
 """
 import csv
 import io
@@ -182,24 +182,37 @@ def _build(kind: Kind, v: dict, ctx: ParseContext) -> Row:
     return WasteRow(v["waste_date"], product_id, v["quantity"])
 
 
+MIXED_DAILY_AND_HOURLY = "同じ日・商品に日計の行と時刻つきの行が混在しています"
+
+
 def parse_csv(kind: Kind, data: bytes, ctx: ParseContext) -> ParseResult:
     try:
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError:
         raise FileFormatError("文字コードはUTF-8にしてください") from None
-    lines = text.splitlines()
-    reader = csv.reader(lines)
+    # 引用符の中の改行を値の一部として読むため、行に分けずに csv に渡す
+    reader = csv.reader(io.StringIO(text, newline=""))
     header = next(reader, None)
     if not header or all(not h.strip() for h in header):
         raise FileFormatError("見出し行がありません")
-    index = {h.strip(): i for i, h in enumerate(header)}
+    names = [h.strip() for h in header]
+    duplicated = sorted({n for n in names if n and names.count(n) > 1})
+    if duplicated:
+        raise FileFormatError(f"見出し行に同じ列名があります: {', '.join(duplicated)}")
+    index = {n: i for i, n in enumerate(names)}
     specs = COLUMNS[kind]
     missing = [s.name for s in specs if s.required and s.name not in index]
     if missing:
         raise FileFormatError(f"必須列がありません: {', '.join(missing)}")
 
     result = ParseResult()
-    for row_no, cells in enumerate(reader, start=2):
+    row_nos: list[int] = []
+    while True:
+        # 行番号はレコードが始まるファイル上の行(引用符の中の改行で複数行にまたがっても先頭の行)
+        row_no = reader.line_num + 1
+        cells = next(reader, None)
+        if cells is None:
+            break
         if all(not c.strip() for c in cells):
             continue  # 空行は無視する(行番号はファイルの行に合わせる)
         try:
@@ -214,6 +227,27 @@ def parse_csv(kind: Kind, data: bytes, ctx: ParseContext) -> ParseResult:
                 else:
                     values[spec.name] = _convert(spec, raw)
             result.rows.append(_build(kind, values, ctx))
+            row_nos.append(row_no)
         except _RowInvalid as e:
             result.errors.append(RowError(row_no, e.reason))
+    if kind == "pos":
+        _reject_mixed_daily_and_hourly(result, row_nos)
     return result
+
+
+def _reject_mixed_daily_and_hourly(result: ParseResult, row_nos: list[int]) -> None:
+    """同じ日・商品に日計と時刻つきの行が混在すれば、二重に数えないよう、その日・商品の行をすべてエラー行にする。"""
+    kinds: dict[tuple[date, int], set[bool]] = {}
+    for r in result.rows:
+        kinds.setdefault((r.sales_date, r.product_id), set()).add(r.sales_hour is None)
+    mixed = {k for k, v in kinds.items() if len(v) > 1}
+    if not mixed:
+        return
+    kept = []
+    for r, row_no in zip(result.rows, row_nos):
+        if (r.sales_date, r.product_id) in mixed:
+            result.errors.append(RowError(row_no, MIXED_DAILY_AND_HOURLY))
+        else:
+            kept.append(r)
+    result.rows = kept
+    result.errors.sort(key=lambda e: e.row)

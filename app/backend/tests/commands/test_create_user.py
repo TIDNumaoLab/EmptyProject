@@ -59,3 +59,15 @@ def test_main_does_not_crash_on_non_utf8_console(monkeypatch):
     fake = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
     monkeypatch.setattr(sys, "stderr", fake)
     assert main([]) == 2  # 日本語の説明文をヘルプとして表示する
+
+
+@pytest.mark.parametrize("kwargs,msg", [
+    (dict(login_id="a" * 33), "login_id は32文字以内にしてください"),
+    (dict(name="あ" * 33), "name は32文字以内にしてください"),
+    (dict(name=""), "name を指定してください"),
+    (dict(department_codes=["VEG", "VEG"]), "部門コードが重複しています: VEG"),
+])
+def test_create_user_rejects_bad_input_before_db(kwargs, msg):
+    # トレースバックではなく、分かりやすいエラーにする(PR #1 指摘7)
+    with pytest.raises(CommandError, match=msg):
+        create_user(None, **(BASE | kwargs))
