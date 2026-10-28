@@ -124,6 +124,7 @@ export default function OrdersPage() {
           selected={selected}
           skipped={skipped}
           approveLocked={recalculating}
+          computing={recalculating}
           onSelect={(id, checked) => {
             const next = new Set(selected);
             if (checked) next.add(id);

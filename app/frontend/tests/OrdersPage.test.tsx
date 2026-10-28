@@ -38,6 +38,14 @@ test("shows empty state", async () => {
   expect(await screen.findByText("この条件の提案はありません。")).toBeInTheDocument();
 });
 
+test("shows computing message instead of empty state while the first job runs", async () => {
+  vi.mocked(proposalsApi.listProposals).mockResolvedValue(listResponse([], running(0, 6)));
+  vi.mocked(proposalsApi.getJob).mockReturnValue(new Promise(() => {}));
+  await renderPage(<OrdersPage />, staff(VEG), "発注");
+  expect(await screen.findByText("最新の予測を計算中です。完了すると表示します。")).toBeInTheDocument();
+  expect(screen.queryByText("この条件の提案はありません。")).not.toBeInTheDocument();
+});
+
 test("recalc button disabled while job running and shows progress", async () => {
   vi.mocked(proposalsApi.listProposals).mockResolvedValue(listResponse([proposal()], running(3, 6)));
   vi.mocked(proposalsApi.getJob).mockReturnValue(new Promise(() => {}));
