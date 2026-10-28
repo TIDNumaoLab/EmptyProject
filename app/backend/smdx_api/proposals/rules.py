@@ -98,6 +98,8 @@ class FreshnessContext:
     data_changed_at: datetime | None
     # 特売・カレンダーの最終変更日時(settings の internal.events_changed_at)
     events_changed_at: datetime | None
+    # 計算に関わる設定の最終変更日時(settings の internal.settings_changed_at)
+    settings_changed_at: datetime | None
     current_model_version: str
     stale_hours: float
 
@@ -119,6 +121,8 @@ def is_stale(p: ProposalFreshness, ctx: FreshnessContext, now: datetime) -> bool
     if ctx.data_changed_at is not None and ctx.data_changed_at > p.calculated_at:
         return True
     if ctx.events_changed_at is not None and ctx.events_changed_at > p.calculated_at:
+        return True
+    if ctx.settings_changed_at is not None and ctx.settings_changed_at > p.calculated_at:
         return True
     if p.model_version != ctx.current_model_version:
         return True

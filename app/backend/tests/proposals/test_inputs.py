@@ -26,7 +26,7 @@ from smdx_api.proposals.inputs import (
     promotions_frame,
     weather_frame,
 )
-from smdx_api.settings.service import EVENTS_CHANGED_KEY, touch_internal
+from smdx_api.settings.service import EVENTS_CHANGED_KEY, SETTINGS_CHANGED_KEY, touch_internal
 from smdx_api.weather_client.service import ForecastResult
 from tests.conftest import jst
 from tests.fakes import hourly_rows
@@ -101,6 +101,9 @@ def test_freshness_context_takes_latest_change(db, product_factory, proposal_fac
 
     touch_internal(db, EVENTS_CHANGED_KEY, jst(2026, 10, 16, 12))
     assert freshness_context(db, veg.id, "baseline", 3).events_changed_at == jst(2026, 10, 16, 12)
+    assert ctx.settings_changed_at is None
+    touch_internal(db, SETTINGS_CHANGED_KEY, jst(2026, 10, 16, 13))
+    assert freshness_context(db, veg.id, "baseline", 3).settings_changed_at == jst(2026, 10, 16, 13)
 
 
 @pytest.mark.db

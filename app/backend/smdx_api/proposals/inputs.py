@@ -22,7 +22,7 @@ from smdx_api.db.models import (
     ProposalHistory,
 )
 from smdx_api.proposals.rules import FreshnessContext
-from smdx_api.settings.service import EVENTS_CHANGED_KEY, read_internal_datetime
+from smdx_api.settings.service import EVENTS_CHANGED_KEY, SETTINGS_CHANGED_KEY, read_internal_datetime
 from smdx_api.weather_client.service import ForecastResult
 from smdx_features.build import CalendarData
 
@@ -159,6 +159,7 @@ def freshness_context(db: Session, department_id: int, current_model_version: st
     return FreshnessContext(
         data_changed_at=max(found) if found else None,
         events_changed_at=read_internal_datetime(db, EVENTS_CHANGED_KEY),
+        settings_changed_at=read_internal_datetime(db, SETTINGS_CHANGED_KEY),
         current_model_version=current_model_version,
         stale_hours=stale_hours,
     )
