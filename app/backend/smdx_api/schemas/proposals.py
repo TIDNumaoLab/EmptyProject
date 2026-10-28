@@ -95,11 +95,18 @@ class AdjustIn(BaseModel):
 
 
 class ApproveIn(BaseModel):
+    # 画面に表示していた提案数(裏の再計算で変わっていれば 409)
+    expected_qty: int
     confirm_warnings: bool = False
 
 
+class BulkApproveItem(BaseModel):
+    id: int
+    expected_qty: int
+
+
 class BulkApproveIn(BaseModel):
-    ids: list[int] = Field(min_length=1, max_length=1000)
+    items: list[BulkApproveItem] = Field(min_length=1, max_length=1000)
 
 
 class SkippedOut(BaseModel):

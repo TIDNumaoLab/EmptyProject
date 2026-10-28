@@ -37,17 +37,26 @@ def check_adjust(s: ProposalState) -> None:
         raise StateError("この提案は修正できません")
 
 
-def check_approve(s: ProposalState, confirm_warnings: bool) -> None:
+QTY_CHANGED = "数量が更新されました。一覧を取り直してから承認してください"
+BULK_QTY_CHANGED = "数量が更新されたため一括承認から除外しました"
+
+
+def check_approve(s: ProposalState, confirm_warnings: bool, current_qty: int, expected_qty: int) -> None:
+    """expected_qty は画面に表示していた提案数。裏の再計算で変わっていれば、見ていない数量を承認しないよう拒否する。"""
     if s.status != "pending":
         raise StateError("未承認の提案ではありません")
+    if current_qty != expected_qty:
+        raise StateError(QTY_CHANGED)
     if s.warnings and not confirm_warnings:
         raise InputError("警告を確認してください")
 
 
-def bulk_skip_reason(s: ProposalState) -> str | None:
+def bulk_skip_reason(s: ProposalState, current_qty: int, expected_qty: int) -> str | None:
     """一括承認で除外する理由。承認してよければ None。"""
     if s.status != "pending":
         return "未承認ではありません"
+    if current_qty != expected_qty:
+        return BULK_QTY_CHANGED
     if set(s.warnings) & BULK_EXCLUDED:
         return "警告があるため一括承認から除外しました"
     return None

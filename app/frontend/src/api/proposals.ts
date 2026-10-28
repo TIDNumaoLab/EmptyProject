@@ -40,13 +40,22 @@ export async function adjustProposal(id: number, body: AdjustInput): Promise<Pro
   return res.data;
 }
 
-export async function approveProposal(id: number, confirmWarnings: boolean): Promise<Proposal> {
-  const res = await api.post<Proposal>(`/api/proposals/${id}/approve`, { confirm_warnings: confirmWarnings });
+// expectedQty は画面に表示している提案数。裏の再計算で変わっていれば 409 になる
+export async function approveProposal(id: number, expectedQty: number, confirmWarnings: boolean): Promise<Proposal> {
+  const res = await api.post<Proposal>(`/api/proposals/${id}/approve`, {
+    expected_qty: expectedQty,
+    confirm_warnings: confirmWarnings,
+  });
   return res.data;
 }
 
-export async function approveBulk(ids: number[]): Promise<BulkApproveResult> {
-  const res = await api.post<BulkApproveResult>("/api/proposals/approve-bulk", { ids });
+export interface BulkApproveItem {
+  id: number;
+  expected_qty: number;
+}
+
+export async function approveBulk(items: BulkApproveItem[]): Promise<BulkApproveResult> {
+  const res = await api.post<BulkApproveResult>("/api/proposals/approve-bulk", { items });
   return res.data;
 }
 

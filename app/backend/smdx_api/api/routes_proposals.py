@@ -240,10 +240,10 @@ def adjust_proposal(proposal_id: int, body: AdjustIn, p: Principal = Depends(cur
 def approve_bulk(body: BulkApproveIn, p: Principal = Depends(current_user), db: Session = Depends(get_db),
                  now: datetime = Depends(get_now)) -> BulkApproveOut:
     """他部門の提案が1件でも含まれていれば、何も承認せず全体を 403 にする。"""
-    rows = db.scalars(select(Proposal).where(Proposal.id.in_(body.ids)))
+    rows = db.scalars(select(Proposal).where(Proposal.id.in_([i.id for i in body.items])))
     for code in {db.get(Department, r.department_id).code for r in rows}:
         department_for(code, p, db)
-    approved, skipped = actions.approve_bulk(db, body.ids, p.user_id, now)
+    approved, skipped = actions.approve_bulk(db, [(i.id, i.expected_qty) for i in body.items], p.user_id, now)
     db.commit()
     return BulkApproveOut(approved_ids=approved, skipped=[SkippedOut(id=i, reason=r) for i, r in skipped])
 
@@ -252,7 +252,7 @@ def approve_bulk(body: BulkApproveIn, p: Principal = Depends(current_user), db: 
 def approve_proposal(proposal_id: int, body: ApproveIn, p: Principal = Depends(current_user),
                      db: Session = Depends(get_db), now: datetime = Depends(get_now)) -> ProposalOut:
     _prepare(db, proposal_id, p, now)
-    return _act(db, actions.approve, proposal_id, body.confirm_warnings, p.user_id, now)
+    return _act(db, actions.approve, proposal_id, body.expected_qty, body.confirm_warnings, p.user_id, now)
 
 
 @router.post("/{proposal_id}/cancel-approval", response_model=ProposalOut)

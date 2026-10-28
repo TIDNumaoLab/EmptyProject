@@ -1,6 +1,6 @@
 // 発注(/orders): 生鮮の発注提案の確認・修正・承認(詳細設計書「発注(/orders)」)
 import { useEffect, useState } from "react";
-import { errorMessage } from "../api/client";
+import { errorMessage, statusOf } from "../api/client";
 import {
   adjustProposal,
   adoptRecalculated,
@@ -61,6 +61,8 @@ export default function OrdersPage() {
       await reload();
     } catch (e) {
       setActionError(errorMessage(e));
+      // 状態や数量が変わっていた(409): 新しい内容を見せるため一覧を取り直す
+      if (statusOf(e) === 409) await reload();
     }
   }
 
@@ -73,13 +75,15 @@ export default function OrdersPage() {
     if (p.warnings.length > 0) {
       setConfirming(p);
     } else {
-      void run(() => approveProposal(p.id, false));
+      void run(() => approveProposal(p.id, p.proposed_qty, false));
     }
   }
 
   async function bulk() {
     await run(async () => {
-      const res = await approveBulk([...selected]);
+      const shown = data?.proposals ?? [];
+      const items = shown.filter((p) => selected.has(p.id)).map((p) => ({ id: p.id, expected_qty: p.proposed_qty }));
+      const res = await approveBulk(items);
       setSkipped(new Map(res.skipped.map((s) => [s.id, s.reason])));
       setSelected(new Set());
     });
@@ -139,7 +143,7 @@ export default function OrdersPage() {
         onConfirm={() => {
           const p = confirming;
           setConfirming(null);
-          if (p) void run(() => approveProposal(p.id, true));
+          if (p) void run(() => approveProposal(p.id, p.proposed_qty, true));
         }}
       />
     </section>

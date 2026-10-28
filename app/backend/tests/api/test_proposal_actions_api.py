@@ -12,7 +12,8 @@ import pytest
     (lambda c, i: c.post(f"/api/proposals/{i}/cancel-approval"), 409),                  # 未承認の取消
     (lambda c, i: c.post(f"/api/proposals/{i}/adopt-recalculated"), 409),
     (lambda c, i: c.patch("/api/proposals/999999", json={"quantity": 3, "reason": "other"}), 404),
-    (lambda c, i: c.post("/api/proposals/999999/approve", json={}), 404),
+    (lambda c, i: c.post("/api/proposals/999999/approve", json={"expected_qty": 10}), 404),
+    (lambda c, i: c.post(f"/api/proposals/{i}/approve", json={}), 422),                 # 表示していた数量なし,
 ])
 def test_action_errors(client, login, user_factory, proposal_factory, fixed_now, call, status):
     login(client, user_factory(departments=("VEG",)))
@@ -29,7 +30,7 @@ def test_adjust_and_conflict_messages(client, login, user_factory, proposal_fact
     body = res.json()
     assert (body["proposed_qty"], body["original_qty"], body["is_adjusted"], body["adjust_reason"], body["adjust_note"]) == (
         18, 24, True, "weather", "雨予報")
-    client.post(f"/api/proposals/{p.id}/approve", json={})
+    client.post(f"/api/proposals/{p.id}/approve", json={"expected_qty": 18})
     res = client.patch(f"/api/proposals/{p.id}", json={"quantity": 3, "reason": "other"})
     assert res.status_code == 409 and res.json()["detail"] == "承認済みの提案は修正できません"
 
@@ -39,11 +40,21 @@ def test_approve_with_warning_requires_confirm(client, login, user_factory, prop
     u = user_factory(name="青果 一郎", departments=("VEG",))
     login(client, u)
     p = proposal_factory(warnings=["NO_INVENTORY"])
-    res = client.post(f"/api/proposals/{p.id}/approve", json={})
+    res = client.post(f"/api/proposals/{p.id}/approve", json={"expected_qty": 10})
     assert res.status_code == 422 and res.json()["detail"] == "警告を確認してください"
-    body = client.post(f"/api/proposals/{p.id}/approve", json={"confirm_warnings": True}).json()
+    body = client.post(f"/api/proposals/{p.id}/approve", json={"expected_qty": 10, "confirm_warnings": True}).json()
     assert (body["status"], body["approved_by_name"], body["approved_at"]) == (
         "approved", "青果 一郎", "2026-10-16T10:00:00+09:00")
+
+
+@pytest.mark.db
+def test_approve_with_changed_quantity_is_409(client, login, user_factory, proposal_factory, fixed_now):
+    login(client, user_factory(departments=("VEG",)))
+    p = proposal_factory(qty=24)
+    res = client.post(f"/api/proposals/{p.id}/approve", json={"expected_qty": 20})
+    assert res.status_code == 409 and res.json()["detail"] == "数量が更新されました。一覧を取り直してから承認してください"
+    body = client.post("/api/proposals/approve-bulk", json={"items": [{"id": p.id, "expected_qty": 20}]}).json()
+    assert body == {"approved_ids": [], "skipped": [{"id": p.id, "reason": "数量が更新されたため一括承認から除外しました"}]}
 
 
 @pytest.mark.db
@@ -72,22 +83,23 @@ def test_bulk_approve_api(client, login, user_factory, proposal_factory, fixed_n
     login(client, user_factory(departments=("VEG",)))
     ok = proposal_factory()
     warn = proposal_factory(warnings=["NO_WEATHER"], product_offset=1)
-    res = client.post("/api/proposals/approve-bulk", json={"ids": [ok.id, warn.id, 999999]})
+    res = client.post("/api/proposals/approve-bulk", json={"items": [{"id": ok.id, "expected_qty": 10}, {"id": warn.id, "expected_qty": 10},
+                                                                   {"id": 999999, "expected_qty": 0}]})
     assert res.status_code == 200
     assert res.json() == {"approved_ids": [ok.id], "skipped": [
         {"id": warn.id, "reason": "警告があるため一括承認から除外しました"}, {"id": 999999, "reason": "対象が見つかりません"}]}
-    assert client.post("/api/proposals/approve-bulk", json={"ids": []}).status_code == 422
+    assert client.post("/api/proposals/approve-bulk", json={"items": []}).status_code == 422
 
 
 @pytest.mark.db
 def test_staff_cannot_touch_other_department(client, login, user_factory, proposal_factory, fixed_now):
     login(client, user_factory(departments=("FISH",)))
     p = proposal_factory()  # VEG の提案
-    assert client.post(f"/api/proposals/{p.id}/approve", json={}).status_code == 403
+    assert client.post(f"/api/proposals/{p.id}/approve", json={"expected_qty": 10}).status_code == 403
     assert client.patch(f"/api/proposals/{p.id}", json={"quantity": 3, "reason": "other"}).status_code == 403
     assert client.post(f"/api/proposals/{p.id}/cancel-approval").status_code == 403
     assert client.post(f"/api/proposals/{p.id}/adopt-recalculated").status_code == 403
-    res = client.post("/api/proposals/approve-bulk", json={"ids": [p.id]})
+    res = client.post("/api/proposals/approve-bulk", json={"items": [{"id": p.id, "expected_qty": 10}]})
     assert res.status_code == 403
     assert client.get("/api/proposals", params={"department_code": "VEG"}).status_code == 403
 
@@ -98,7 +110,8 @@ def test_bulk_with_mixed_departments_approves_nothing(client, login, user_factor
     login(client, user_factory(departments=("FISH",)))
     own = proposal_factory(product_factory(code="FISH-001", department="FISH"))
     other = proposal_factory()  # VEG
-    assert client.post("/api/proposals/approve-bulk", json={"ids": [own.id, other.id]}).status_code == 403
+    assert client.post("/api/proposals/approve-bulk", json={"items": [{"id": own.id, "expected_qty": 10},
+                                                                  {"id": other.id, "expected_qty": 10}]}).status_code == 403
     db.refresh(own)
     assert own.status == "pending"
 
@@ -107,7 +120,7 @@ def test_bulk_with_mixed_departments_approves_nothing(client, login, user_factor
 def test_manager_can_operate_any_department(client, login, user_factory, proposal_factory, fixed_now):
     login(client, user_factory(role="manager", departments=()))
     p = proposal_factory()
-    assert client.post(f"/api/proposals/{p.id}/approve", json={}).status_code == 200
+    assert client.post(f"/api/proposals/{p.id}/approve", json={"expected_qty": 10}).status_code == 200
 
 
 @pytest.mark.db
@@ -118,4 +131,4 @@ def test_actions_require_csrf_header(app, user_factory, proposal_factory, fixed_
     u = user_factory(departments=("VEG",))
     c.post("/api/auth/login", json={"login_id": u.login_id, "password": "pass1234"}, headers={"X-Requested-With": "smdx"})
     p = proposal_factory()
-    assert c.post(f"/api/proposals/{p.id}/approve", json={}).status_code == 403
+    assert c.post(f"/api/proposals/{p.id}/approve", json={"expected_qty": 10}).status_code == 403

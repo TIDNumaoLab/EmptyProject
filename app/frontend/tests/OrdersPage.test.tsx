@@ -92,7 +92,7 @@ test("approving warned row shows confirm dialog with inventory message", async (
   const dialog = screen.getByRole("dialog");
   expect(dialog).toHaveTextContent("在庫が取り込まれていません。このまま承認しますか?");
   await user.click(within(dialog).getByRole("button", { name: "はい" }));
-  expect(proposalsApi.approveProposal).toHaveBeenCalledWith(1, true);
+  expect(proposalsApi.approveProposal).toHaveBeenCalledWith(1, 24, true);
 });
 
 test("approving row without warnings needs no dialog", async () => {
@@ -100,7 +100,18 @@ test("approving row without warnings needs no dialog", async () => {
   await renderPage(<OrdersPage />, staff(VEG), "発注");
   await userEvent.setup().click(await screen.findByRole("button", { name: "承認" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(proposalsApi.approveProposal).toHaveBeenCalledWith(1, false);
+  expect(proposalsApi.approveProposal).toHaveBeenCalledWith(1, 24, false);
+});
+
+test("approval rejected because quantity changed shows the reason and reloads", async () => {
+  // 裏の再計算で数量が変わっていた: 画面に新しい数量を出すため一覧を取り直す
+  vi.mocked(proposalsApi.approveProposal).mockRejectedValue({
+    response: { status: 409, data: { detail: "数量が更新されました。一覧を取り直してから承認してください" } },
+  });
+  await renderPage(<OrdersPage />, staff(VEG), "発注");
+  await userEvent.setup().click(await screen.findByRole("button", { name: "承認" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("数量が更新されました。一覧を取り直してから承認してください");
+  await waitFor(() => expect(proposalsApi.listProposals).toHaveBeenCalledTimes(2));
 });
 
 test("bulk approve reports skipped rows", async () => {
@@ -118,7 +129,10 @@ test("bulk approve reports skipped rows", async () => {
   await user.click(screen.getByLabelText("キャベツ を選択"));
   await user.click(screen.getByLabelText("トマト を選択"));
   await user.click(bulk);
-  expect(proposalsApi.approveBulk).toHaveBeenCalledWith([1, 2]);
+  expect(proposalsApi.approveBulk).toHaveBeenCalledWith([
+    { id: 1, expected_qty: 24 },
+    { id: 2, expected_qty: 24 },
+  ]);
   const row = (await screen.findByText("警告があるため一括承認から除外しました")).closest("tr")!;
   expect(within(row).getByText("トマト")).toBeInTheDocument();
 });

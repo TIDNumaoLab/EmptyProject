@@ -50,17 +50,24 @@ def test_adjust_rules():
 
 def test_approve_requires_confirmation_with_warnings():
     with pytest.raises(InputError, match="警告を確認してください"):
-        check_approve(st(warnings=["NO_INVENTORY"]), False)
-    check_approve(st(warnings=["NO_INVENTORY"]), True)
-    check_approve(st(), False)
+        check_approve(st(warnings=["NO_INVENTORY"]), False, 10, 10)
+    check_approve(st(warnings=["NO_INVENTORY"]), True, 10, 10)
+    check_approve(st(), False, 10, 10)
     with pytest.raises(StateError, match="未承認の提案ではありません"):
-        check_approve(st("approved"), True)
+        check_approve(st("approved"), True, 10, 10)
+
+
+def test_approve_requires_shown_quantity():
+    # 数量の食い違いは、警告の確認より先に知らせる(古い数量で確認ダイアログを出さない)
+    with pytest.raises(StateError, match="数量が更新されました"):
+        check_approve(st(warnings=["NO_INVENTORY"]), False, 12, 10)
 
 
 def test_bulk_skip_reason():
-    assert bulk_skip_reason(st()) is None
-    assert bulk_skip_reason(st(warnings=["STALE_POS"])) == "警告があるため一括承認から除外しました"
-    assert bulk_skip_reason(st("approved")) == "未承認ではありません"
+    assert bulk_skip_reason(st(), 10, 10) is None
+    assert bulk_skip_reason(st(warnings=["STALE_POS"]), 10, 10) == "警告があるため一括承認から除外しました"
+    assert bulk_skip_reason(st("approved"), 10, 10) == "未承認ではありません"
+    assert bulk_skip_reason(st(), 12, 10) == "数量が更新されたため一括承認から除外しました"
 
 
 def test_cancel_until_deadline():

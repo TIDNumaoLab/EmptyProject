@@ -48,14 +48,14 @@ def test_adjust_approved_is_rejected(db, proposal_factory, fixed_now, user):
 def test_expired_proposal_cannot_be_approved(db, proposal_factory, user):
     p = proposal_factory(deadline=jst(2026, 10, 16, 20))
     with pytest.raises(StateError, match="未承認の提案ではありません"):
-        approve(db, p.id, False, user.id, jst(2026, 10, 16, 20))
+        approve(db, p.id, 10, False, user.id, jst(2026, 10, 16, 20))
     assert p.status == "expired"
 
 
 @pytest.mark.db
 def test_approve_sets_approver(db, proposal_factory, fixed_now, user):
     p = proposal_factory()
-    approve(db, p.id, False, user.id, fixed_now.value)
+    approve(db, p.id, 10, False, user.id, fixed_now.value)
     assert (p.status, p.approved_by, p.approved_at) == ("approved", user.id, fixed_now.value)
     assert last_history(db, p).action == "approve"
 
@@ -64,8 +64,8 @@ def test_approve_sets_approver(db, proposal_factory, fixed_now, user):
 def test_approve_with_warning_needs_confirmation(db, proposal_factory, fixed_now, user):
     p = proposal_factory(warnings=["NO_INVENTORY"])
     with pytest.raises(InputError, match="警告を確認してください"):
-        approve(db, p.id, False, user.id, fixed_now.value)
-    approve(db, p.id, True, user.id, fixed_now.value)
+        approve(db, p.id, 10, False, user.id, fixed_now.value)
+    approve(db, p.id, 10, True, user.id, fixed_now.value)
     assert p.status == "approved"
 
 
@@ -74,11 +74,30 @@ def test_approve_bulk_skips_warnings_and_non_pending(db, proposal_factory, user,
     ok = proposal_factory()
     warn = proposal_factory(warnings=["NO_INVENTORY"], product_offset=1)
     done = proposal_factory(status="approved", product_offset=2)
-    approved, skipped = approve_bulk(db, [ok.id, warn.id, done.id, 999999], user.id, fixed_now.value)
+    approved, skipped = approve_bulk(db, [(ok.id, 10), (warn.id, 10), (done.id, 10), (999999, 0)], user.id, fixed_now.value)
     assert approved == [ok.id]
     assert skipped == [(warn.id, "警告があるため一括承認から除外しました"), (done.id, "未承認ではありません"),
                        (999999, "対象が見つかりません")]
     assert (ok.status, warn.status) == ("approved", "pending")
+
+
+@pytest.mark.db
+def test_approve_rejects_quantity_changed_since_shown(db, proposal_factory, fixed_now, user):
+    # 画面を開いた後に裏の再計算で 20 → 24 に変わった
+    p = proposal_factory(qty=24)
+    with pytest.raises(StateError, match="数量が更新されました。一覧を取り直してから承認してください"):
+        approve(db, p.id, 20, True, user.id, fixed_now.value)
+    assert p.status == "pending"
+
+
+@pytest.mark.db
+def test_approve_bulk_skips_quantity_changed_since_shown(db, proposal_factory, user, fixed_now):
+    ok = proposal_factory(qty=24)
+    moved = proposal_factory(qty=30, product_offset=1)
+    approved, skipped = approve_bulk(db, [(ok.id, 24), (moved.id, 28), (ok.id, 99)], user.id, fixed_now.value)
+    assert approved == [ok.id]
+    assert skipped == [(moved.id, "数量が更新されたため一括承認から除外しました")]
+    assert moved.status == "pending"
 
 
 @pytest.mark.db
@@ -117,4 +136,4 @@ def test_cancel_at_deadline_is_rejected(db, proposal_factory, user):
 @pytest.mark.db
 def test_missing_proposal(db, user, fixed_now):
     with pytest.raises(ProposalNotFound):
-        approve(db, 999999, False, user.id, fixed_now.value)
+        approve(db, 999999, 0, False, user.id, fixed_now.value)

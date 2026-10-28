@@ -55,23 +55,31 @@ def _approve(db: Session, p: Proposal, actor_id: int, now: datetime) -> None:
     _history(db, p, "approve", actor_id, now, p.proposed_qty, p.proposed_qty)
 
 
-def approve(db: Session, proposal_id: int, confirm_warnings: bool, actor_id: int, now: datetime) -> Proposal:
+def approve(db: Session, proposal_id: int, expected_qty: int, confirm_warnings: bool, actor_id: int,
+            now: datetime) -> Proposal:
     p = _get(db, proposal_id, now)
-    check_approve(state_of(p), confirm_warnings)
+    check_approve(state_of(p), confirm_warnings, p.proposed_qty, expected_qty)
     _approve(db, p, actor_id, now)
     return p
 
 
-def approve_bulk(db: Session, ids: Sequence[int], actor_id: int, now: datetime) -> tuple[list[int], list[tuple[int, str]]]:
-    """pending かつ警告なしの提案だけを承認する。除外した ID と理由を返す(エラーにしない)。"""
+def approve_bulk(db: Session, items: Sequence[tuple[int, int]], actor_id: int,
+                 now: datetime) -> tuple[list[int], list[tuple[int, str]]]:
+    """pending かつ警告なしで、表示していた数量のままの提案だけを承認する。除外した ID と理由を返す(エラーにしない)。
+
+    items は (提案ID, 画面に表示していた提案数)。同じ ID が重なれば最初のものを使う。
+    """
     apply_deadlines(db, now)
+    expected: dict[int, int] = {}
+    for proposal_id, qty in items:
+        expected.setdefault(proposal_id, qty)
     approved, skipped = [], []
-    for proposal_id in dict.fromkeys(ids):
+    for proposal_id, qty in expected.items():
         p = _lock(db, proposal_id)
         if p is None:
             skipped.append((proposal_id, NOT_FOUND))
             continue
-        reason = bulk_skip_reason(state_of(p))
+        reason = bulk_skip_reason(state_of(p), p.proposed_qty, qty)
         if reason is not None:
             skipped.append((proposal_id, reason))
             continue
