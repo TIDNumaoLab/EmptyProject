@@ -85,3 +85,14 @@ def department_for(code: str, p: Principal, db: Session) -> Department:
     if not can_access_department(p, dept.code):
         raise HTTPException(status_code=403, detail=FORBIDDEN)
     return dept
+
+
+WRONG_BUSINESS = "部門と業務の組合せが正しくありません"
+
+
+def department_of_type(code: str, p: Principal, db: Session, business_type: str) -> Department:
+    """部門を引き、業務(order=生鮮の発注 / production=惣菜の製造計画)が合わなければ 400。"""
+    dept = department_for(code, p, db)
+    if dept.business_type != business_type:
+        raise HTTPException(status_code=400, detail=WRONG_BUSINESS)
+    return dept

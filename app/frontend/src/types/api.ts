@@ -45,6 +45,20 @@ export interface InventoryInput {
   items: { product_code: string; quantity: number }[];
 }
 
+// 惣菜の陳列残数の入力(PUT /api/production/display-stock)
+// 入力時刻は送らない(保存時のサーバーの時刻を使い、応答で返る)
+export interface DisplayStockInput {
+  department_code: string;
+  target_date: string;
+  items: { product_code: string; quantity: number }[];
+}
+
+export interface DisplayStockResult {
+  saved: number;
+  entered_at: string;
+  job: Job;
+}
+
 export interface Product {
   product_code: string;
   name: string;
@@ -152,6 +166,8 @@ export interface Job {
 
 export interface ProposalList {
   proposals: Proposal[];
+  // 一覧の対象日。惣菜は既定表示でも決めた日、生鮮の既定表示は null
+  target_date: string | null;
   freshness: Freshness;
   job: Job | null;
   notice: string | null;

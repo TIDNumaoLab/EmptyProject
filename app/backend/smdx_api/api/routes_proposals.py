@@ -25,7 +25,15 @@ from smdx_api.proposals.deadlines import apply_deadlines
 from smdx_api.proposals.jobs import JOB_TIMEOUT, TIMED_OUT, JobKey, start_or_get_job
 from smdx_api.proposals.rules import InputError, StateError
 from smdx_api.proposals.schedule import TargetOutOfRange, check_target_range
-from smdx_api.proposals.service import JobLauncher, job_key, needs_auto_recalc
+from smdx_api.proposals.service import (
+    JobLauncher,
+    deli_target,
+    is_production,
+    job_key,
+    needs_auto_recalc,
+    resolved_targets,
+    wanted,
+)
 from smdx_api.schemas.proposals import (
     AdjustIn,
     ApproveIn,
@@ -44,18 +52,7 @@ from smdx_api.settings.service import load_settings
 
 router = APIRouter(prefix="/api/proposals")
 
-WRONG_BUSINESS = "部門と業務の組合せが正しくありません"
-
-
-def order_department(code: str, p: Principal, db: Session) -> Department:
-    """生鮮(発注)の部門を引く。惣菜の製造計画は段階5で同じ API に加える。"""
-    department = department_for(code, p, db)
-    if department.business_type != "order":
-        raise HTTPException(status_code=400, detail=WRONG_BUSINESS)
-    return department
-
-
-def _targets(target_date: date | None, now: datetime) -> FreshTargets:
+def parse_targets(target_date: date | None, now: datetime) -> FreshTargets:
     if target_date is not None:
         try:
             check_target_range(target_date, now.astimezone(JST).date())
@@ -104,7 +101,7 @@ def _freshness(proposals: Sequence[Proposal]) -> FreshnessOut:
     )
 
 
-def _job_out(job: ProposalJob) -> JobOut:
+def job_out(job: ProposalJob) -> JobOut:
     return JobOut(id=job.id, status=job.status, processed=job.processed, total=job.total, error=job.error,
                   notice=job.notice)
 
@@ -130,7 +127,11 @@ def _last_notice(db: Session, department: Department, key: JobKey) -> str | None
 def _shown(db: Session, department: Department, now: datetime, settings, targets: FreshTargets,
            status: str | None) -> list[Proposal]:
     q = select(Proposal).join(Product, Product.id == Proposal.product_id).where(Proposal.department_id == department.id)
-    if targets.explicit_date is not None:
+    if is_production(department):
+        # 対象日の全時間帯(製造開始を過ぎたものも含む)。区切りを変えた後の古い時間帯の提案は出さない
+        q = q.where(Proposal.target_date == deli_target(now, settings, targets),
+                    Proposal.time_band.in_(settings.deli_time_bands))
+    elif targets.explicit_date is not None:
         q = q.where(Proposal.target_date == targets.explicit_date)
     else:
         # 既定表示は各商品の最も早い納品日の提案だけ
@@ -156,23 +157,24 @@ def list_proposals(
     launcher: JobLauncher = Depends(get_job_launcher),
 ) -> ProposalListOut:
     """既存の提案をすぐに返し、再計算が必要ならジョブを開始して併せて返す(詳細設計書「きっかけ」)。"""
-    department = order_department(department_code, p, db)
-    targets = _targets(target_date, now)
+    department = department_for(department_code, p, db)
+    targets = parse_targets(target_date, now)
     apply_deadlines(db, now, department.id)
     db.commit()
     settings = load_settings(db)
     key = job_key(department, now, settings, targets)
     job = None
     if needs_auto_recalc(db, department, now, settings, services, targets):
-        total = len(fresh_target_dates(department_products(db, department), now, settings, targets))
+        total = len(wanted(db, department, now, settings, targets))
         job, created = start_or_get_job(db, department, key, now, total)
         if created:
-            launcher.launch(background_tasks, job.id, targets)
+            launcher.launch(background_tasks, job.id, resolved_targets(department, now, settings, targets))
     else:
         job = _running_job(db, department, key, now)
     shown = _shown(db, department, now, settings, targets, status)
-    return ProposalListOut(proposals=proposals_out(db, shown), freshness=_freshness(shown),
-                           job=_job_out(job) if job else None, notice=_last_notice(db, department, key))
+    shown_date = deli_target(now, settings, targets) if is_production(department) else targets.explicit_date
+    return ProposalListOut(proposals=proposals_out(db, shown), target_date=shown_date, freshness=_freshness(shown),
+                           job=job_out(job) if job else None, notice=_last_notice(db, department, key))
 
 
 @router.post("/recalculate", response_model=JobResponse)
@@ -185,14 +187,14 @@ def recalculate(
     launcher: JobLauncher = Depends(get_job_launcher),
 ) -> JobResponse:
     """手動再計算。判定を省略して開始する(実行中があればそれを返す)。"""
-    department = order_department(body.department_code, p, db)
-    targets = _targets(body.target_date, now)
+    department = department_for(body.department_code, p, db)
+    targets = parse_targets(body.target_date, now)
     settings = load_settings(db)
-    total = len(fresh_target_dates(department_products(db, department), now, settings, targets))
+    total = len(wanted(db, department, now, settings, targets))
     job, created = start_or_get_job(db, department, job_key(department, now, settings, targets), now, total)
     if created:
-        launcher.launch(background_tasks, job.id, targets)
-    return JobResponse(job=_job_out(job))
+        launcher.launch(background_tasks, job.id, resolved_targets(department, now, settings, targets))
+    return JobResponse(job=job_out(job))
 
 
 @router.get("/jobs/{job_id}", response_model=JobOut)
@@ -206,7 +208,7 @@ def get_job(job_id: int, p: Principal = Depends(current_user), db: Session = Dep
     if job.status == "running" and job.started_at < now - JOB_TIMEOUT:
         job.status, job.error, job.finished_at = "failed", TIMED_OUT, now
         db.commit()
-    return _job_out(job)
+    return job_out(job)
 
 
 def _check_access(db: Session, proposal_id: int, p: Principal) -> None:

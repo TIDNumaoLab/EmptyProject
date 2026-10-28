@@ -20,6 +20,8 @@ def test_first_open_starts_job_then_returns_proposals(client, login, user_factor
     first = list_veg(client)
     assert first["proposals"] == [] and first["job"]["status"] == "running" and first["job"]["total"] == 1
     assert first["freshness"] == {"calculated_at": None, "weather_fetched_at": None, "inventory_based_at": None}
+    # 生鮮の既定表示は商品ごとに対象日が異なるため、一覧の対象日は null
+    assert first["target_date"] is None
     # TestClient は応答後に BackgroundTasks を実行する → ジョブ完了
     job = client.get(f"/api/proposals/jobs/{first['job']['id']}").json()
     assert job == {"id": first["job"]["id"], "status": "succeeded", "processed": 1, "total": 1, "error": None,
@@ -66,13 +68,6 @@ def test_other_department_is_403_and_requires_login(client, login, user_factory,
     login(client, user_factory(departments=("VEG",)))
     assert client.get("/api/proposals", params={"department_code": "FISH"}).status_code == 403
     assert client.post("/api/proposals/recalculate", json={"department_code": "FISH"}).status_code == 403
-
-
-@pytest.mark.db
-def test_production_department_is_400(client, login, user_factory):
-    login(client, user_factory(departments=("DELI",)))
-    res = client.get("/api/proposals", params={"department_code": "DELI"})
-    assert res.status_code == 400 and res.json()["detail"] == "部門と業務の組合せが正しくありません"
 
 
 @pytest.mark.db
@@ -159,8 +154,8 @@ def test_explicit_target_date_lists_only_that_day(client, login, user_factory, p
     proposal_factory(product_code="VEG-001", target=date(2026, 10, 17))
     other = proposal_factory(product_code="VEG-002", target=date(2026, 10, 20), deadline=jst(2026, 10, 19, 20))
     login(client, user_factory(departments=("VEG",)))
-    rows = list_veg(client, target_date="2026-10-20")["proposals"]
-    assert [r["id"] for r in rows] == [other.id]
+    body = list_veg(client, target_date="2026-10-20")
+    assert [r["id"] for r in body["proposals"]] == [other.id] and body["target_date"] == "2026-10-20"
 
 
 @pytest.mark.db

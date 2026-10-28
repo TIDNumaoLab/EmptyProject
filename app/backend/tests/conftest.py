@@ -21,6 +21,7 @@ from smdx_api.auth.passwords import hash_password
 from smdx_api.clock import JST, get_clock, get_now
 from smdx_api.db.models import (
     Department,
+    DisplayStockEntry,
     Forecast,
     InventorySnapshot,
     PosSale,
@@ -292,6 +293,35 @@ def veg_setup(db, product_factory, add_pos, add_inventory, fixed_now) -> Product
         d = date(2026, 10, 2) + timedelta(days=i)
         add_pos(p, d, 20 if d == date(2026, 10, 10) else 10)
     add_inventory(p, jst(2026, 10, 16, 14, 30), 8)
+    return p
+
+
+@pytest.fixture
+def add_display_stock(db):
+    """惣菜の陳列残数を1件登録する。"""
+
+    def add(product: Product, target: date, entered_at: datetime, qty: int) -> DisplayStockEntry:
+        row = DisplayStockEntry(target_date=target, entered_at=entered_at, product_id=product.id, quantity=qty)
+        db.add(row)
+        db.flush()
+        return row
+
+    return add
+
+
+# 時間帯の時(開始)ごとの1日の販売数: 10時帯 1、11時帯 6、14時帯 3、17時帯 9
+DELI_HOURLY = {10: 1, 11: 2, 12: 2, 13: 2, 14: 1, 15: 1, 16: 1, 17: 3, 18: 3, 19: 3}
+
+
+@pytest.fixture
+def deli_setup(db, product_factory, add_pos, fixed_now) -> Product:
+    """DELI-001(唐揚げ)。10/02〜10/15 の時刻つき POS は毎日 DELI_HOURLY。現在は 10/16 8:00(最初の製造開始 9:00 より前)。"""
+    fixed_now.set(jst(2026, 10, 16, 8))
+    p = product_factory(code="DELI-001", department="DELI", name="唐揚げ")
+    for i in range(14):
+        d = date(2026, 10, 2) + timedelta(days=i)
+        for hour, q in DELI_HOURLY.items():
+            add_pos(p, d, q, hour)
     return p
 
 

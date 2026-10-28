@@ -5,8 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from smdx_api.api.deps import current_user, get_db
-from smdx_api.api.routes_proposals import order_department
+from smdx_api.api.deps import current_user, department_of_type, get_db
 from smdx_api.auth.permissions import Principal
 from smdx_api.clock import JST, get_now
 from smdx_api.db.models import Product, Proposal, User
@@ -25,7 +24,7 @@ def approved_orders(
     now: datetime = Depends(get_now),
 ) -> list[ApprovedOrderOut]:
     """状態が承認済み・確定の提案。対象日を指定しなければ当日以降のすべて。"""
-    department = order_department(department_code, p, db)
+    department = department_of_type(department_code, p, db, "order")
     apply_deadlines(db, now, department.id)
     db.commit()
     q = (select(Proposal, Product, User.name)

@@ -52,6 +52,7 @@ export function proposal(over: Partial<Proposal> = {}): Proposal {
 export function listResponse(proposals: Proposal[], job: Job | null = null, over: Partial<ProposalList> = {}): ProposalList {
   return {
     proposals,
+    target_date: null,
     freshness: {
       calculated_at: "2026-10-16T15:00:00+09:00",
       weather_fetched_at: "2026-10-16T15:00:00+09:00",
