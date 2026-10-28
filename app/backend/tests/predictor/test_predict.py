@@ -44,11 +44,14 @@ def test_baseline_when_no_model(tmp_path):
     reg = ModelRegistry({"daily": tmp_path / "none", "time_band": tmp_path / "none2"})
     b = predict(reg, "daily", feats([3.0], [9.0]), weather_available=True, current_time_bands=None)
     assert (b.values, b.model_version, b.is_baseline, b.notice) == ([3.0], BASELINE_VERSION, True, None)
+    assert b.loaded_version == BASELINE_VERSION
 
 
 def test_baseline_when_weather_missing(registry_with):
     b = predict(registry_with(model_dict()), "daily", feats([3.0], [9.0]), weather_available=False, current_time_bands=None)
     assert (b.values, b.model_version, b.is_baseline) == ([3.0], "baseline", True)
+    # 予測はベースラインでも、読み込んでいたモデルの版は同じ予測の中で取ったものを返す(最新性判定に使う)
+    assert b.loaded_version == "daily-2026.11.01-1"
 
 
 def test_baseline_when_time_bands_changed(registry_with):

@@ -21,7 +21,7 @@ from smdx_api.order_calc.fresh import (
     hourly_sales_ratio,
     remaining_sales_ratio,
 )
-from smdx_api.predictor.predict import BASELINE_VERSION, predict
+from smdx_api.predictor.predict import predict
 from smdx_api.predictor.registry import ModelRegistry
 from smdx_api.proposals import inputs
 from smdx_api.proposals.basis import build_basis, plain
@@ -140,9 +140,6 @@ def compute_fresh(
         known_through=latest_pos, missing_days=missing,
     )
     batch = predict(services.registry, "daily", features, weather_available=forecast.available, current_time_bands=None)
-    # 最新性判定で比べるのは、計算時に読み込んでいたモデルの版(行がベースラインになったかどうかとは分ける)
-    loaded = services.registry.get("daily")
-    loaded_version = loaded.version if loaded else BASELINE_VERSION
     open_h, close_h = _business_hours(settings)
 
     out = []
@@ -192,7 +189,8 @@ def compute_fresh(
             weather_fetched_at=fetched_at,
         )
         basis["holiday_name"] = plain(features["holiday_name"].iloc[last])
-        basis["loaded_model_version"] = loaded_version
+        # 最新性判定で比べるのは、計算時に読み込んでいたモデルの版(行がベースラインになったかどうかとは分ける)
+        basis["loaded_model_version"] = batch.loaded_version
         out.append(ComputedProposal(
             product_id=p.id, product_code=p.product_code, target_date=target, time_band=None, qty=result.order_qty,
             deadline=fresh_deadline(target, p.lead_time_days, cutoff), warnings=warnings, basis=basis,
