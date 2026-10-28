@@ -76,3 +76,14 @@ def forest_registry(tmp_path: Path, product_codes: list[str], version: str = MOD
         "metrics": {"wape": 0.2, "mae": 1.0, "baseline_wape": 0.3},
     }}, path)
     return ModelRegistry({"daily": path, "time_band": tmp_path / "no-band.joblib"})
+
+
+def band_registry(tmp_path: Path, time_bands: list[int], value: float = 5.0, version: str = "time_band-2026.11.01-1") -> ModelRegistry:
+    """時間帯別の定数モデル(学習時の時間帯の区切り time_bands)と、日別はモデルなし。"""
+    path = tmp_path / "time_band.joblib"
+    joblib.dump({"model": ConstModel(value), "meta": {
+        "version": version, "granularity": "time_band", "feature_columns": feature_columns("time_band"),
+        "trained_from": date(2025, 9, 1), "trained_to": date(2026, 10, 31), "time_bands": time_bands,
+        "metrics": {"wape": 0.2, "mae": 1.0, "baseline_wape": 0.3},
+    }}, path)
+    return ModelRegistry({"daily": tmp_path / "no-daily.joblib", "time_band": path})

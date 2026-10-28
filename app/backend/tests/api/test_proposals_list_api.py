@@ -69,13 +69,6 @@ def test_other_department_is_403_and_requires_login(client, login, user_factory,
 
 
 @pytest.mark.db
-def test_production_department_is_400(client, login, user_factory):
-    login(client, user_factory(departments=("DELI",)))
-    res = client.get("/api/proposals", params={"department_code": "DELI"})
-    assert res.status_code == 400 and res.json()["detail"] == "部門と業務の組合せが正しくありません"
-
-
-@pytest.mark.db
 def test_recalculate_requires_csrf_header(app, login, user_factory):
     from fastapi.testclient import TestClient
 

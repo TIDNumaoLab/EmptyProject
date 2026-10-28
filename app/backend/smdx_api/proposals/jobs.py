@@ -14,6 +14,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from smdx_api.db.models import Department, ProposalJob
+from smdx_api.proposals.compute_deli import compute_deli
 from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets, compute_fresh
 from smdx_api.proposals.deadlines import apply_deadlines
 from smdx_api.proposals.persist import apply_computed
@@ -75,7 +76,12 @@ def run_job(
             # 期限経過の更新は先に確定し、その行のロックを持ったまま気象の取得・予測をしない
             apply_deadlines(db, now, department.id)
             db.commit()
-            computed, notice = compute_fresh(db, department, now, load_settings(db), services, targets)
+            settings = load_settings(db)
+            if department.business_type == "production":
+                # 惣菜は対象日を決めてから開始する(service.resolved_targets)
+                computed, notice = compute_deli(db, department, now, settings, services, targets.explicit_date)
+            else:
+                computed, notice = compute_fresh(db, department, now, settings, services, targets)
             job.total, job.notice = len(computed), notice
             db.commit()
 

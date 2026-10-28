@@ -82,7 +82,7 @@ def fresh_target_dates(products: Sequence[Product], now: datetime, settings: App
     return out
 
 
-def _business_hours(settings: AppSettings) -> tuple[int, int]:
+def business_hours(settings: AppSettings) -> tuple[int, int]:
     """特徴量の集約に使う営業時間(時)。閉店が HH:30 などの場合はその時を含める。"""
     close = settings.business_close
     return settings.business_open.hour, close.hour + (1 if close.minute else 0)
@@ -141,11 +141,11 @@ def compute_fresh(
 
     features = build_daily_features(
         rows, inputs.daily_sales_frame(db, ids, since), inputs.calendar_data(db, since, last_day),
-        inputs.promotions_frame(db, ids, since, last_day), weather, _business_hours(settings),
+        inputs.promotions_frame(db, ids, since, last_day), weather, business_hours(settings),
         known_through=latest_pos, missing_days=missing,
     )
     batch = predict(services.registry, "daily", features, weather_available=forecast.available, current_time_bands=None)
-    open_h, close_h = _business_hours(settings)
+    open_h, close_h = business_hours(settings)
 
     out = []
     for p in products:
