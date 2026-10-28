@@ -63,8 +63,12 @@ def coerce_types(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def sample_frame(granularity: Granularity, rows: int = 3) -> pd.DataFrame:
-    """適合確認の試験入力。全列を持ち、型は本番と同じ。"""
+# 運用でモデルに渡る行でも欠けうる列(気象の欠けた行はモデルに渡さないので、天候コード・気温は含めない)
+NULLABLE_COLUMNS = ("precipitation", "sales_lag_7d", "sales_avg_7d")
+
+
+def sample_frame(granularity: Granularity, rows: int = 3, with_missing: bool = False) -> pd.DataFrame:
+    """適合確認の試験入力。全列を持ち、型は本番と同じ。with_missing なら最後の行の NULLABLE_COLUMNS を欠損にする。"""
     i = np.arange(rows)
     data = {
         "product_code": [f"SAMPLE-{n % 3 + 1}" for n in i],
@@ -80,4 +84,7 @@ def sample_frame(granularity: Granularity, rows: int = 3) -> pd.DataFrame:
         "sales_lag_7d": 10.0 + i,
         "sales_avg_7d": 9.5 + i,
     }
-    return coerce_types(pd.DataFrame({c: data[c] for c in feature_columns(granularity)}))
+    df = coerce_types(pd.DataFrame({c: data[c] for c in feature_columns(granularity)}))
+    if with_missing:
+        df.loc[df.index[-1], list(NULLABLE_COLUMNS)] = np.nan
+    return df

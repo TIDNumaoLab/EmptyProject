@@ -37,6 +37,7 @@ def _out(db: Session, promo: Promotion) -> PromotionOut:
         product_code=product.product_code,
         product_name=product.name,
         department_code=product.department.code,
+        department_name=product.department.name,
         start_date=promo.start_date,
         end_date=promo.end_date,
         description=promo.description,

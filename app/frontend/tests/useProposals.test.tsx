@@ -133,3 +133,47 @@ test("job progress stops after 5 consecutive network failures", async () => {
   });
   expect(proposalsApi.getJob).toHaveBeenCalledTimes(5);
 });
+
+test("held update is not applied until applyUpdate", async () => {
+  // 保存していない入力がある間は、再計算が終わっても一覧を差し替えない(PR #6 の軽微な課題)
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.mocked(proposalsApi.listProposals)
+    .mockResolvedValueOnce(listResponse([proposal({ proposed_qty: 24 })], running(0, 1)))
+    .mockResolvedValueOnce(listResponse([proposal({ proposed_qty: 30 })]));
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null, notice: null });
+
+  const { result } = renderHook(() => useProposals({ departmentCode: "VEG" }, { pollMs: 2000, holdUpdates: () => true }));
+  await waitFor(() => expect(result.current.job?.status).toBe("running"));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  await waitFor(() => expect(result.current.hasUpdate).toBe(true));
+  expect(result.current.job).toBeNull();
+  expect(result.current.data?.proposals[0].proposed_qty).toBe(24);
+  expect(proposalsApi.listProposals).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    await result.current.applyUpdate();
+  });
+  expect(result.current.hasUpdate).toBe(false);
+  expect(result.current.data?.proposals[0].proposed_qty).toBe(30);
+});
+
+test("changing the conditions clears the held update notice", async () => {
+  // 部門などを変えた後の取得が失敗しても、前の条件のお知らせを残さない(PR #7 レビューの指摘5)
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.mocked(proposalsApi.listProposals)
+    .mockResolvedValueOnce(listResponse([proposal()], running(0, 1)))
+    .mockRejectedValueOnce(new Error("通信に失敗"));
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null, notice: null });
+  const { result, rerender } = renderHook(({ code }) => useProposals({ departmentCode: code }, { pollMs: 2000, holdUpdates: () => true }),
+    { initialProps: { code: "VEG" } });
+  await waitFor(() => expect(result.current.job?.status).toBe("running"));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  await waitFor(() => expect(result.current.hasUpdate).toBe(true));
+  rerender({ code: "FISH" });
+  await waitFor(() => expect(result.current.error).not.toBeNull());
+  expect(result.current.hasUpdate).toBe(false);
+});

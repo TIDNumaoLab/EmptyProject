@@ -1,4 +1,5 @@
 // 在庫入力(/inventory): 部門の商品ごとに在庫数を手入力する(生鮮のみ)。前回の在庫数と基準日時を併記する
+// 基準日時を利用者が変えていなければ、保存の時点の現在時刻を使う(画面を開いたまま時間がたっても古い日時にならないように)
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { errorMessage } from "../api/client";
 import { getLatestInventory, putInventory } from "../api/inventory";
@@ -15,6 +16,8 @@ export default function InventoryPage() {
     selectableDepartments(me?.accessible_departments ?? [], "order")[0]?.code ?? "",
   );
   const [basedAt, setBasedAt] = useState(jstNowInput());
+  // 利用者が基準日時を変えたか(変えていなければ保存時の現在時刻にする)
+  const [basedAtEdited, setBasedAtEdited] = useState(false);
   const [rows, setRows] = useState<InventoryLatest[]>([]);
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -46,10 +49,16 @@ export default function InventoryPage() {
       setError("在庫数は0以上の整数で入力してください");
       return;
     }
+    const at = basedAtEdited ? basedAt : jstNowInput();
+    if (!at) {
+      setError("基準日時を入力してください");
+      return;
+    }
+    setBasedAt(at);
     try {
       const res = await putInventory({
         department_code: department,
-        based_at: toJstIso(basedAt),
+        based_at: toJstIso(at),
         items: entered.map((r) => ({ product_code: r.product_code, quantity: Number(inputs[r.product_code]) })),
       });
       setMessage(`保存しました(${res.saved}件)`);
@@ -71,8 +80,25 @@ export default function InventoryPage() {
           <DepartmentSelect value={department} onChange={setDepartment} businessType="order" />
           <label className={styles.field}>
             基準日時
-            <input type="datetime-local" value={basedAt} onChange={(e) => setBasedAt(e.target.value)} required />
+            <input
+              type="datetime-local"
+              value={basedAt}
+              onChange={(e) => {
+                setBasedAt(e.target.value);
+                setBasedAtEdited(true);
+              }}
+              required
+            />
           </label>
+          <button
+            type="button"
+            onClick={() => {
+              setBasedAt(jstNowInput());
+              setBasedAtEdited(false);
+            }}
+          >
+            現在時刻にする
+          </button>
           <button type="submit" className={styles.primary}>
             保存
           </button>

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from smdx_api.api.deps import get_db
 from smdx_api.config import AppConfig
 from smdx_api.auth.passwords import hash_password
-from smdx_api.clock import JST, get_now
+from smdx_api.clock import JST, get_clock, get_now
 from smdx_api.db.models import (
     Department,
     Forecast,
@@ -98,6 +98,7 @@ def _apply_overrides(request, app) -> None:
     if "fixed_now" in request.fixturenames:
         clock = request.getfixturevalue("fixed_now")
         app.dependency_overrides[get_now] = lambda: clock.value
+        app.dependency_overrides[get_clock] = lambda: (lambda: clock.value)
 
 
 @pytest.fixture

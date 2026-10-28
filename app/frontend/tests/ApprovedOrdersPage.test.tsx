@@ -27,6 +27,9 @@ test("approved list in product code order and print button calls window.print", 
   expect(first.getByText("24")).toBeInTheDocument();
   expect(first.getByText("6")).toBeInTheDocument();
   expect(first.getByText("担当 太郎")).toBeInTheDocument();
+  // 状態(承認済み/確定)の列を出す(PR #6 の軽微な課題)
+  expect(first.getByText("確定")).toBeInTheDocument();
+  expect(within(rows[2]).getByText("承認済み")).toBeInTheDocument();
   expect(ordersApi.listApprovedOrders).toHaveBeenCalledWith("VEG", undefined);
   // 惣菜は対象外
   expect(screen.queryByRole("option", { name: "惣菜" })).not.toBeInTheDocument();

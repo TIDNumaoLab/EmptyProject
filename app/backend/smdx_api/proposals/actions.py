@@ -15,6 +15,8 @@ from smdx_api.proposals.deadlines import apply_deadlines, state_of
 from smdx_api.proposals.rules import bulk_skip_reason, check_adjust, check_adopt, check_approve, check_cancel
 
 NOT_FOUND = "対象が見つかりません"
+# 根拠(basis)に付ける再計算待ちの印
+RECALC_PENDING = "recalc_pending"
 
 
 class ProposalNotFound(Exception):
@@ -78,7 +80,8 @@ def approve_bulk(db: Session, items: Sequence[tuple[int, int]], actor_id: int,
     for proposal_id, qty in items:
         expected.setdefault(proposal_id, qty)
     approved, skipped = [], []
-    for proposal_id, qty in expected.items():
+    # 2人が重なる提案を同時に一括承認しても行き詰まらないよう、ID の小さい順にロックする
+    for proposal_id, qty in sorted(expected.items()):
         p = _lock(db, proposal_id)
         if p is None:
             skipped.append((proposal_id, NOT_FOUND))
@@ -104,7 +107,7 @@ def cancel_approval(db: Session, proposal_id: int, actor_id: int, now: datetime)
 def adopt_recalculated(db: Session, proposal_id: int, actor_id: int, now: datetime) -> Proposal:
     """再計算値を提案値として採用し、未承認・修正なしに戻す。修正前の値と修正理由は履歴に残す。
 
-    計算日時・根拠は変えないため、次の最新性判定で通常どおり再計算される。
+    根拠は採用前の計算のもので数量と食い違うため、根拠に再計算待ちの印を付けて次の最新性判定で再計算させる。
     """
     p = _get(db, proposal_id, now)
     check_adopt(state_of(p), now)
@@ -114,5 +117,6 @@ def adopt_recalculated(db: Session, proposal_id: int, actor_id: int, now: dateti
     p.adjust_reason = p.adjust_note = None
     p.approved_by = p.approved_at = None
     p.status, p.is_adjusted = "pending", False
+    p.basis = {**(p.basis or {}), RECALC_PENDING: True}
     db.flush()
     return p

@@ -16,7 +16,7 @@ def list_products(
     department_code: str | None = None, _: Principal = Depends(current_user), db: Session = Depends(get_db)
 ) -> list[ProductOut]:
     q = (
-        select(Product, Department.code)
+        select(Product, Department.code, Department.name)
         .join(Department, Product.department_id == Department.id)
         .where(Product.is_active.is_(True))
         .order_by(Product.product_code)
@@ -30,6 +30,7 @@ def list_products(
             product_code=p.product_code,
             name=p.name,
             department_code=code,
+            department_name=department_name,
             order_unit=p.order_unit,
             lead_time_days=p.lead_time_days,
             can_carry_over=p.can_carry_over,
@@ -37,5 +38,5 @@ def list_products(
             selling_price=float(p.selling_price) if p.selling_price is not None else None,
             is_active=p.is_active,
         )
-        for p, code in db.execute(q)
+        for p, code, department_name in db.execute(q)
     ]

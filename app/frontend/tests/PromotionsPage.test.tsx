@@ -12,11 +12,11 @@ vi.mock("../src/api/promotions");
 vi.mock("../src/api/products");
 
 const product = (code: string, name: string, dept: string): Product => ({
-  product_code: code, name, department_code: dept, order_unit: 1, lead_time_days: 1,
+  product_code: code, name, department_code: dept, department_name: dept === "VEG" ? "青果" : "鮮魚", order_unit: 1, lead_time_days: 1,
   can_carry_over: true, cost_price: null, selling_price: null, is_active: true,
 });
 const promo: Promotion = {
-  id: 7, product_code: "VEG-001", product_name: "キャベツ", department_code: "VEG",
+  id: 7, product_code: "VEG-001", product_name: "キャベツ", department_code: "VEG", department_name: "青果",
   start_date: "2026-10-20", end_date: "2026-10-22", description: "チラシ", created_by_name: "担当 太郎",
 };
 
@@ -41,6 +41,17 @@ test("lists promotions for default period and offers only own department product
   expect(within(row).getByText("10/20〜10/22")).toBeInTheDocument();
   const options = within(screen.getByLabelText("商品")).getAllByRole("option").map((o) => o.textContent);
   expect(options).toEqual(["キャベツ"]);
+});
+
+test("other department rows show department name, not code", async () => {
+  // 担当者が他部門の特売を見ても、部門コードではなく部門名を出す(PR #2 指摘10)
+  vi.mocked(promotionsApi.listPromotions).mockResolvedValue([
+    { ...promo, id: 9, product_code: "FISH-001", product_name: "生鮭切身", department_code: "FISH", department_name: "鮮魚",
+      description: "鮮魚の特売" },
+  ]);
+  await renderPage(<PromotionsPage />, staff(VEG), "特売・チラシ");
+  const row = (await screen.findByText("鮮魚の特売")).closest("tr")!;
+  expect(within(row).getByText("鮮魚")).toBeInTheDocument();
 });
 
 test("promotion form rejects end before start on client", async () => {

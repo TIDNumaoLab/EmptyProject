@@ -6,6 +6,8 @@ no_history として返す(呼び出し側が NO_HISTORY 警告を付ける)。
 時間帯別モデルの time_bands が現在の設定と異なる(notice に再学習が必要な旨を入れる)、推論の出力が数値でない。
 気象の列(天候コード・気温)が欠けた行は、欠損を埋めて推論せず、その行だけベースラインにする(row_is_baseline)。
 予報が対象の一部の日にしか無い場合でも、残りの行はモデルで予測できる。
+行ごとの規則(apply_inference_rules)は、モデル作成用プロジェクトの評価でも同じものを使う(評価の精度を運用時とそろえるため)。
+時間帯別の予測では、現在の設定の時間帯の区切りを必ず渡す(渡さなければ ValueError)。
 """
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -47,6 +49,29 @@ def _all_baseline(base: list[float], no_history: list[bool], loaded_version: str
     return PredictionBatch(base, no_history, [True] * len(base), BASELINE_VERSION, True, notice, loaded_version)
 
 
+def missing_weather_rows(features: pd.DataFrame) -> np.ndarray:
+    """気象の列(天候コード・気温)が欠けた行。"""
+    return features[list(WEATHER_COLUMNS)].isna().any(axis=1).to_numpy()
+
+
+def apply_inference_rules(features: pd.DataFrame, model_values: Sequence[float]) -> tuple[list[float], list[bool]]:
+    """モデルの出力(行と同じ並び。気象の欠けた行の値は使わない)に、行ごとの規則を当てはめる。
+
+    実績(sales_lag_7d・sales_avg_7d)が無い行は0、気象の欠けた行はベースライン、負の値は0。
+    戻り値は (予測値, 行ごとにベースラインにしたか)。
+    """
+    base, no_history = baseline_values(features)
+    values, row_is_baseline = [], []
+    for b, nh, missing, v in zip(base, no_history, missing_weather_rows(features), model_values):
+        if missing:
+            values.append(b)
+            row_is_baseline.append(True)
+        else:
+            values.append(0.0 if nh else max(0.0, float(v)))
+            row_is_baseline.append(False)
+    return values, row_is_baseline
+
+
 def predict(
     registry: ModelRegistry,
     granularity: Granularity,
@@ -55,15 +80,17 @@ def predict(
     weather_available: bool,
     current_time_bands: Sequence[int] | None,
 ) -> PredictionBatch:
+    if granularity == "time_band" and current_time_bands is None:
+        raise ValueError("時間帯別の予測には、現在の設定の時間帯の区切りを渡してください")
     base, no_history = baseline_values(features)
     loaded = registry.get(granularity)
     loaded_version = loaded.version if loaded else BASELINE_VERSION
     if loaded is None or not weather_available or features.empty:
         return _all_baseline(base, no_history, loaded_version)
-    if granularity == "time_band" and current_time_bands is not None and sorted(loaded.time_bands or []) != sorted(current_time_bands):
+    if granularity == "time_band" and sorted(loaded.time_bands or []) != sorted(current_time_bands):
         return _all_baseline(base, no_history, loaded_version, TIME_BANDS_CHANGED)
 
-    missing_weather = features[list(WEATHER_COLUMNS)].isna().any(axis=1).to_numpy()
+    missing_weather = missing_weather_rows(features)
     if missing_weather.all():
         return _all_baseline(base, no_history, loaded_version)
     usable = features[~missing_weather]
@@ -74,14 +101,8 @@ def predict(
     if len(out) != len(usable) or not np.isfinite(out).all():
         return _all_baseline(base, no_history, loaded_version)
 
-    model_values = iter(out)
-    values, row_is_baseline = [], []
-    for b, nh, missing in zip(base, no_history, missing_weather):
-        if missing:
-            values.append(b)
-            row_is_baseline.append(True)
-        else:
-            v = next(model_values)
-            values.append(0.0 if nh else max(0.0, float(v)))
-            row_is_baseline.append(False)
+    # 推論したのは気象のそろった行だけなので、行の並びに戻す(気象の欠けた行は規則でベースラインになる)
+    full = np.full(len(features), np.nan)
+    full[~missing_weather] = out
+    values, row_is_baseline = apply_inference_rules(features, full)
     return PredictionBatch(values, no_history, row_is_baseline, loaded.version, False, None, loaded_version)

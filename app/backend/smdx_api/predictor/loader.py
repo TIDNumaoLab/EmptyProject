@@ -51,7 +51,8 @@ def check_model_object(obj: Any, granularity: Granularity) -> LoadedModel:
     if list(meta["feature_columns"]) != expected:
         raise ModelIncompatible("feature_columns が本体の特徴量と一致しません")
 
-    sample = sample_frame(granularity)
+    # 運用と同じく、欠損のある行も含めて推論できることを確かめる
+    sample = sample_frame(granularity, with_missing=True)
     try:
         out = np.asarray(obj["model"].predict(sample[expected]), dtype=float).ravel()
     except Exception:

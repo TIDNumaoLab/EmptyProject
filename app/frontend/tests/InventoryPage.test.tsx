@@ -43,3 +43,33 @@ test("rejects negative quantity on client", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("在庫数は0以上の整数で入力してください");
   expect(inventoryApi.putInventory).not.toHaveBeenCalled();
 });
+
+test("untouched based_at uses the time of saving", async () => {
+  // 画面を開いたまま翌朝に保存しても、前日の日時にならない(PR #2 指摘8)
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(new Date("2026-10-16T19:00:00+09:00"));
+    await renderPage(<InventoryPage />, staff(VEG), "在庫入力");
+    await screen.findByText("前回 8(10/15 20:00)");
+    expect(screen.getByLabelText("基準日時")).toHaveValue("2026-10-16T19:00");
+    vi.setSystemTime(new Date("2026-10-17T07:30:00+09:00"));
+    fireEvent.change(screen.getByLabelText("キャベツ の在庫数"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("保存しました(1件)")).toBeInTheDocument();
+    expect(vi.mocked(inventoryApi.putInventory).mock.calls[0][0].based_at).toBe("2026-10-17T07:30:00+09:00");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("now button resets based_at and empty based_at is rejected", async () => {
+  await renderPage(<InventoryPage />, staff(VEG), "在庫入力");
+  await screen.findByText("前回 8(10/15 20:00)");
+  fireEvent.change(screen.getByLabelText("基準日時"), { target: { value: "" } });
+  fireEvent.change(screen.getByLabelText("キャベツ の在庫数"), { target: { value: "5" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("基準日時を入力してください");
+  expect(inventoryApi.putInventory).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "現在時刻にする" }));
+  expect(screen.getByLabelText("基準日時")).not.toHaveValue("");
+});

@@ -11,6 +11,8 @@ from smdx_api.commands import CommandError, open_session
 from smdx_api.db.models import Department, User, UserDepartment
 
 MIN_PASSWORD_LENGTH = 8
+# users.login_id・users.name の列の長さ
+MAX_NAME_LENGTH = 32
 
 
 def create_user(
@@ -19,11 +21,20 @@ def create_user(
     # DB に触れる前に確かめられることを先に確かめる
     if not login_id:
         raise CommandError("login_id を指定してください")
+    if len(login_id) > MAX_NAME_LENGTH:
+        raise CommandError(f"login_id は{MAX_NAME_LENGTH}文字以内にしてください")
+    if not name:
+        raise CommandError("name を指定してください")
+    if len(name) > MAX_NAME_LENGTH:
+        raise CommandError(f"name は{MAX_NAME_LENGTH}文字以内にしてください")
     if role not in ("staff", "manager"):
         raise CommandError("role は staff か manager を指定してください")
     # 店長は全部門を操作できるため、所属部門は任意(要件定義書「利用者と権限」)
     if role == "staff" and not department_codes:
         raise CommandError("発注担当者は所属部門を1つ以上指定してください")
+    duplicated = sorted({c for c in department_codes if department_codes.count(c) > 1})
+    if duplicated:
+        raise CommandError(f"部門コードが重複しています: {', '.join(duplicated)}")
     if len(password) < MIN_PASSWORD_LENGTH:
         raise CommandError(f"パスワードは{MIN_PASSWORD_LENGTH}文字以上にしてください")
 

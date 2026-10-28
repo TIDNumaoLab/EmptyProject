@@ -97,6 +97,81 @@ def test_run_job_succeeds_and_creates_proposals(db, veg_setup, job_session_facto
 
 
 @pytest.mark.db
+def test_run_job_records_actual_finish_time(db, veg_setup, job_session_factory, baseline_services, fixed_now):
+    # 計算日時は要求の時刻、終了日時は実際に終わった時刻(PR #6 の軽微な課題)
+    job, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), fixed_now.value, total=1)
+    finished = fixed_now.value + timedelta(seconds=40)
+    run_job(job.id, FreshTargets(None), job_session_factory, baseline_services, lambda: fixed_now.value,
+            clock=lambda: finished)
+    db.expire_all()
+    job = db.get(ProposalJob, job.id)
+    assert job.finished_at == finished
+    assert db.scalars(select(Proposal)).one().calculated_at == fixed_now.value
+
+
+@pytest.mark.db
+def test_run_job_does_not_overwrite_timed_out_job(db, veg_setup, job_session_factory, baseline_services, fixed_now,
+                                                  monkeypatch):
+    # 10分を超えて失敗にしたジョブを、裏の処理が最後に成功で上書きしない(PR #6 の軽微な課題)
+    from smdx_api.proposals import jobs
+
+    job, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), fixed_now.value, total=1)
+    real = jobs.apply_computed
+
+    def slow(db_, *a, **k):
+        real(db_, *a, **k)
+        with job_session_factory() as other:
+            other.get(ProposalJob, job.id).status = "failed"
+            other.get(ProposalJob, job.id).error = jobs.TIMED_OUT
+            other.commit()
+
+    monkeypatch.setattr(jobs, "apply_computed", slow)
+    run_job(job.id, FreshTargets(None), job_session_factory, baseline_services, lambda: fixed_now.value)
+    db.expire_all()
+    job = db.get(ProposalJob, job.id)
+    assert (job.status, job.error) == ("failed", jobs.TIMED_OUT)
+    assert count_proposals(db) == 1   # 計算した提案は保存する
+
+
+@pytest.mark.db
+def test_run_job_commits_deadlines_before_computing(db, veg_setup, job_session_factory, baseline_services, fixed_now,
+                                                    monkeypatch):
+    # 期限経過の更新のロックを、気象の取得・予測の間ずっと持たない(PR #6 の軽微な課題)
+    from smdx_api.proposals import jobs
+
+    events = []
+    real_deadlines = jobs.apply_deadlines
+    monkeypatch.setattr(jobs, "apply_deadlines", lambda *a, **k: events.append("deadlines") or real_deadlines(*a, **k))
+    monkeypatch.setattr(jobs, "compute_fresh", lambda *a, **k: events.append("compute") or ([], None))
+
+    def factory():
+        s = job_session_factory()
+        real_commit = s.commit
+        s.commit = lambda: events.append("commit") or real_commit()
+        return s
+
+    job, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), fixed_now.value, total=1)
+    run_job(job.id, FreshTargets(None), factory, baseline_services, lambda: fixed_now.value)
+    assert events[:3] == ["deadlines", "commit", "compute"]
+
+
+@pytest.mark.db
+def test_start_job_locks_department_without_blocking_references(db, fixed_now):
+    # 部門の行のロックは FOR NO KEY UPDATE で足りる(部門を参照する行の追加を妨げない。PR #6 の軽微な課題)
+    from sqlalchemy import event
+
+    statements = []
+    conn = db.connection()
+    listener = lambda *args: statements.append(args[2])  # noqa: E731
+    event.listen(conn, "before_cursor_execute", listener)
+    try:
+        start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), fixed_now.value, total=1)
+    finally:
+        event.remove(conn, "before_cursor_execute", listener)
+    assert any("FOR NO KEY UPDATE" in s for s in statements)
+
+
+@pytest.mark.db
 def test_run_job_keeps_notice(db, veg_setup, job_session_factory, baseline_services, fixed_now, monkeypatch):
     from smdx_api.proposals import jobs
 

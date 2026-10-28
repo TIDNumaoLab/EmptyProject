@@ -1,5 +1,5 @@
 // 発注(/orders): 生鮮の発注提案の確認・修正・承認(詳細設計書「発注(/orders)」)
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, statusOf } from "../api/client";
 import {
   adjustProposal,
@@ -35,12 +35,21 @@ export default function OrdersPage() {
   const [skipped, setSkipped] = useState<Map<number, string>>(new Map());
   const [confirming, setConfirming] = useState<Proposal | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // 保存していない数量の入力がある提案。ある間は再計算の結果で一覧を差し替えない
+  const dirtyIds = useRef<Set<number>>(new Set());
+  // 入力が無くなったときに、差し替えを待っている結果があれば反映する(描画ごとの値を ref で参照する)
+  const pendingApply = useRef<(() => Promise<void>) | null>(null);
+  const onDirtyChange = useCallback((id: number, dirty: boolean) => {
+    if (dirty) dirtyIds.current.add(id);
+    else dirtyIds.current.delete(id);
+    if (dirtyIds.current.size === 0 && pendingApply.current) void pendingApply.current();
+  }, []);
 
-  const { data, error, job, reload, recalculate } = useProposals({
-    departmentCode: department,
-    targetDate: targetDate || undefined,
-    status: status || undefined,
-  });
+  const { data, error, job, reload, recalculate, hasUpdate, applyUpdate } = useProposals(
+    { departmentCode: department, targetDate: targetDate || undefined, status: status || undefined },
+    { holdUpdates: () => dirtyIds.current.size > 0 },
+  );
+  pendingApply.current = hasUpdate ? applyUpdate : null;
 
   useEffect(() => {
     getSettings()
@@ -118,6 +127,15 @@ export default function OrdersPage() {
       </div>
       <FreshnessBar freshness={data?.freshness ?? null} job={job} onRecalculate={() => void recalculate()} />
       {data?.notice && <div className={styles.notice}>{data.notice}</div>}
+      {hasUpdate && (
+        <div className={styles.notice}>
+          <span>新しい計算結果があります。</span>{" "}
+          <button type="button" onClick={() => void applyUpdate()}>
+            反映する
+          </button>
+          (提案数が変わった行の保存していない入力は、新しい提案数に戻ります)
+        </div>
+      )}
       {data && (
         <ProposalTable
           proposals={data.proposals}
@@ -135,6 +153,7 @@ export default function OrdersPage() {
           onApprove={approve}
           onCancel={(p) => void run(() => cancelApproval(p.id))}
           onAdopt={(p) => void run(() => adoptRecalculated(p.id))}
+          onDirtyChange={onDirtyChange}
         />
       )}
       <ConfirmDialog

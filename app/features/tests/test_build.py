@@ -134,3 +134,17 @@ def test_time_band_missing_days():
     df = build_time_band_features(t, hourly, CalendarData(), NO_PROMO, None, [10, 11, 14, 17], 20,
                                   missing_days={date(2026, 10, 12)})
     assert df.iloc[0].sales_avg_7d == pytest.approx(3.0)
+
+
+def test_build_groups_weather_by_jst_date_even_for_utc_times():
+    # UTC の時刻で渡されても、日本時間の日付で日ごとに分けてから集約する(PR #7 レビューの指摘3)
+    # 日本時間 7時の雨は UTC では前日 22時。UTC の日付で分けると集約から外れてしまう
+    w = hourly_fixture(date(2026, 10, 17), rain_hours={7})
+    w["time"] = w["time"].map(lambda t: t.astimezone(ZoneInfo("UTC")))
+    df = build_daily_features(
+        [DailyTarget("VEG-001", date(2026, 10, 17), plan_date=date(2026, 10, 16))],
+        daily_sales=daily_sales([("VEG-001", date(2026, 10, 10), 7)]),
+        calendar=CalendarData({}, {}), promotions=NO_PROMO, weather=w, business_hours=(6, 20),
+    )
+    row = df.iloc[0]
+    assert (row.weather_code, row.temperature, row.precipitation) == (61, 20.0, 2.0)

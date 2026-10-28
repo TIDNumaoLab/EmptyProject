@@ -16,6 +16,7 @@ from smdx_api.db.models import (
 from smdx_api.proposals.inputs import (
     backlog_qty,
     calendar_data,
+    confirmed_orders,
     daily_sales_frame,
     freshness_context,
     hourly_sales_frame,
@@ -66,7 +67,9 @@ def test_backlog_counts_confirmed_before_target_after_inventory(db, product_fact
     other = product_factory(code="VEG-002")
     proposal_factory(other, target=date(2026, 10, 17), qty=7, status="confirmed")  # 別商品
     proposal_factory(p, target=date(2026, 10, 15), qty=3, status="approved")     # 確定でない
-    assert backlog_qty(db, p.id, jst(2026, 10, 16, 19, 30), date(2026, 10, 18), time(10)) == 12
+    orders = confirmed_orders(db, [p.id], date(2026, 10, 16), date(2026, 10, 18))
+    assert backlog_qty(orders[p.id], jst(2026, 10, 16, 19, 30), date(2026, 10, 18), time(10)) == 12
+    assert set(orders) == {p.id}   # 別商品・対象日以降・確定でないものは読まない
 
 
 @pytest.mark.db
@@ -74,7 +77,8 @@ def test_backlog_delivery_same_day_after_inventory(db, product_factory, proposal
     # 在庫基準が当日の開店前(8:00)なら、当日 10:00 納品の確定分は発注残に入る
     p = product_factory()
     proposal_factory(p, target=date(2026, 10, 16), qty=6, status="confirmed")
-    assert backlog_qty(db, p.id, jst(2026, 10, 16, 8), date(2026, 10, 17), time(10)) == 6
+    orders = confirmed_orders(db, [p.id], date(2026, 10, 16), date(2026, 10, 17))
+    assert backlog_qty(orders[p.id], jst(2026, 10, 16, 8), date(2026, 10, 17), time(10)) == 6
 
 
 @pytest.mark.db
@@ -128,7 +132,8 @@ def test_daily_sales_frame_sums_hourly_and_daily(db, product_factory, add_pos):
     assert list(df.columns) == ["product_code", "sales_date", "quantity"]
     assert sorted(zip(df.product_code, df.sales_date, df.quantity)) == [
         ("VEG-001", date(2026, 10, 14), 5), ("VEG-001", date(2026, 10, 15), 5)]
-    assert hourly_sales_rows(db, p.id, date(2026, 10, 1)) == [(date(2026, 10, 15), 10, 2.0), (date(2026, 10, 15), 11, 3.0)]
+    assert hourly_sales_rows(db, [p.id], date(2026, 10, 1)) == {
+        p.id: [(date(2026, 10, 15), 10, 2.0), (date(2026, 10, 15), 11, 3.0)]}
     hf = hourly_sales_frame(db, [p.id], date(2026, 10, 1))
     assert list(hf.columns) == ["product_code", "sales_date", "sales_hour", "quantity"] and len(hf) == 2
 
@@ -179,3 +184,22 @@ def test_weather_frame():
     df = weather_frame(ForecastResult(True, jst(2026, 10, 16, 9), rows))
     assert list(df.columns) == ["time", "weather_code", "temperature", "precipitation_probability", "precipitation"]
     assert len(df) == 24 and df["time"].iloc[0] == jst(2026, 10, 16, 0) and df["weather_code"].iloc[0] == 61
+
+
+@pytest.mark.db
+def test_backlog_batched_for_products_and_inventory_boundaries(db, product_factory, proposal_factory):
+    # まとめて読んだ確定分を、商品ごとの在庫基準日時で絞る。納品時刻ちょうどの在庫は納品後とみなす(PR #7 レビューの指摘8)
+    a, b = product_factory(code="VEG-001"), product_factory(code="VEG-002")
+    proposal_factory(a, target=date(2026, 10, 16), qty=6, status="confirmed")   # 10/16 10:00 納品
+    proposal_factory(a, target=date(2026, 10, 17), qty=4, status="confirmed")   # 10/17 10:00 納品
+    proposal_factory(b, target=date(2026, 10, 16), qty=9, status="confirmed")
+    orders = confirmed_orders(db, [a.id, b.id], date(2026, 10, 16), date(2026, 10, 18))
+    assert sorted(orders[a.id]) == [(date(2026, 10, 16), 6), (date(2026, 10, 17), 4)]
+    assert orders[b.id] == [(date(2026, 10, 16), 9)]
+    # 在庫が納品時刻の前なら当日の納品分も発注残、ちょうど・後なら含めない
+    assert backlog_qty(orders[a.id], jst(2026, 10, 16, 9, 59), date(2026, 10, 18), time(10)) == 10
+    assert backlog_qty(orders[a.id], jst(2026, 10, 16, 10), date(2026, 10, 18), time(10)) == 4
+    assert backlog_qty(orders[a.id], jst(2026, 10, 16, 10, 1), date(2026, 10, 18), time(10)) == 4
+    # 対象の納品日以降は含めない
+    assert backlog_qty(orders[a.id], jst(2026, 10, 16, 9), date(2026, 10, 17), time(10)) == 6
+    assert backlog_qty(orders[b.id], jst(2026, 10, 16, 9), date(2026, 10, 18), time(10)) == 9

@@ -43,3 +43,9 @@ def test_backend_can_load_trained_models():
     assert '"scikit-learn"' in pyproject and '"lightgbm"' in pyproject
     # LightGBM の Linux 版は OpenMP(libgomp)を使う
     assert "libgomp1" in _read("backend.Dockerfile")
+
+
+def test_dev_compose_mounts_features():
+    # 特徴量を変えたら、イメージを作り直さなくても本体に反映する(PR #4 指摘9)
+    text = (INFRA / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "../features:/app/features" in text

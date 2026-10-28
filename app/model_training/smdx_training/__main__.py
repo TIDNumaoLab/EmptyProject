@@ -23,11 +23,16 @@ from smdx_training.evaluate import evaluate
 from smdx_training.export import export_model, next_version
 from smdx_training.report import write_report
 from smdx_training.train import SEED, fit_candidates
-from smdx_api.predictor.predict import baseline_values
+from smdx_api.predictor.predict import apply_inference_rules, baseline_values
 
 DEFAULT_TIME_BANDS = [10, 11, 14, 17]
 DEFAULT_BUSINESS_HOURS = (10, 20)
 NOT_ADOPTED = "ベースラインを上回るモデルがないため採用しません"
+
+
+def model_predictions(models: dict, valid, cols: list[str]) -> dict[str, np.ndarray]:
+    """検証期間の予測。本体の推論と同じ規則(実績なしは0、気象の欠けた行はベースライン、負は0)を当てはめる。"""
+    return {name: np.array(apply_inference_rules(valid, m.predict(valid[cols]))[0]) for name, m in models.items()}
 
 
 def _safe_console() -> None:
@@ -80,7 +85,7 @@ def run(args: argparse.Namespace) -> int:
     train, valid = time_split(table)
     cols = feature_columns(g)
     models = fit_candidates(train, g, seed=args.seed)
-    predictions = {name: np.clip(m.predict(valid[cols]), 0, None) for name, m in models.items()}
+    predictions = model_predictions(models, valid, cols)
     ev = evaluate(valid, predictions)
 
     demand = raw.true_demand

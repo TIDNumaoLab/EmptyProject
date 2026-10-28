@@ -12,12 +12,12 @@ _EPS = 1e-9
 
 
 def display_stock_by_band(entered_at: time | None, quantity: int, bands: Sequence[int]) -> dict[int, int]:
-    """開始時刻が入力時刻より後の最初の時間帯にだけ陳列残数を割り当てる。"""
+    """開始時刻が入力時刻以後の最初の時間帯にだけ陳列残数を割り当てる(開始時刻ちょうどの入力はその時間帯)。"""
     out = {b: 0 for b in bands}
     if entered_at is None:
         return out
     for b in sorted(bands):
-        if time(b) > entered_at:
+        if time(b) >= entered_at:
             out[b] = quantity
             break
     return out

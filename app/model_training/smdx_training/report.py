@@ -43,6 +43,8 @@ def write_report(
     safety_factor: float = 1.1,
 ) -> None:
     rows = {"baseline": evaluation.baseline, **evaluation.candidates}
+    uses_true_demand = bool(backtests) and next(iter(backtests.values())).uses_true_demand
+    rainy = "代表天候が降水を伴う日" if granularity == "daily" else "降水を伴う時間帯(日ではなく時間帯ごとに判定)"
     lines = [
         f"# 評価レポート {version}",
         "",
@@ -50,10 +52,12 @@ def write_report(
         f"- 学習期間: {train_period[0]} 〜 {train_period[1]}",
         f"- 検証期間: {valid_period[0]} 〜 {valid_period[1]}",
         f"- 採用: {NAMES.get(selected, selected) if selected else 'なし(ベースラインを上回るモデルがないため採用しません)'}",
+        f"- 需要: {'真の需要(true_demand.csv)' if uses_true_demand else '販売数(真の需要が無いため)'}",
         "",
         "## 予測精度(検証期間)",
         "",
         "主指標は WAPE(=Σ|誤差|/Σ実績)、補助は MAE。条件別の該当日数が7日未満のものは参考扱い。",
+        f"雨天の WAPE は{rainy}で数える。予測には本体と同じ規則(実績なしは0、気象の欠けた行はベースライン)を当てはめる。",
         "",
         "| モデル | WAPE | MAE | 雨天日の WAPE | 祝日・行事日の WAPE |",
         "|---|---|---|---|---|",
@@ -71,6 +75,8 @@ def write_report(
     ]
     for name, b in backtests.items():
         lines.append(f"| {NAMES.get(name, name)} | {b.waste_qty} | {b.stockout_qty} | {_yen(b.waste_amount)} | {_yen(b.stockout_amount)} |")
-    if backtests and not next(iter(backtests.values())).uses_true_demand:
+    if granularity == "daily":
+        lines += ["", "※ 持越可の商品は売れ残りを翌日に持ち越すため、廃棄は0になる(廃棄は持越不可の商品だけで生じる)。"]
+    if backtests and not uses_true_demand:
         lines += ["", "※ 真の需要が無いため販売数を需要とみなした。欠品時に販売数が打ち切られるため、欠品数は過小評価になる。"]
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")

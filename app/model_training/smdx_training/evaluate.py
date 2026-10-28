@@ -10,8 +10,8 @@ import numpy as np
 import pandas as pd
 
 from smdx_api.predictor.predict import baseline_values
+from smdx_features.weather import RAIN_CODE_FROM
 
-RAIN_CODE_FROM = 51
 MIN_CONDITION_DAYS = 7
 
 

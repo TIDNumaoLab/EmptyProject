@@ -1,5 +1,6 @@
 // 提案一覧の取得と再計算ジョブの進捗の確認(詳細設計書「きっかけ」)。
-// 一覧APIは既存の提案をすぐ返し、再計算中ならジョブも返す。ジョブが終わるまで一定間隔で進捗を取り、終わったら一覧を取り直す
+// 一覧APIは既存の提案をすぐ返し、再計算中ならジョブも返す。ジョブが終わるまで一定間隔で進捗を取り、終わったら一覧を取り直す。
+// holdUpdates が true を返す間(保存していない入力がある間)は取り直さず、hasUpdate を立てて applyUpdate を待つ
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, statusOf } from "../api/client";
 import { getJob, listProposals, recalculate as startRecalc } from "../api/proposals";
@@ -14,13 +15,18 @@ export interface ProposalParams {
 // 進捗の取得が通信の失敗・5xx で続けてこの回数失敗したら確認をやめる
 const MAX_POLL_FAILURES = 5;
 
-export function useProposals(params: ProposalParams, opts: { pollMs?: number } = {}) {
+export function useProposals(params: ProposalParams, opts: { pollMs?: number; holdUpdates?: () => boolean } = {}) {
   const pollMs = opts.pollMs ?? 2000;
+  // 最新の判定を使うため、描画ごとに入れ替わる関数を ref に置く
+  const holdUpdates = useRef(opts.holdUpdates);
+  holdUpdates.current = opts.holdUpdates;
   const { departmentCode, targetDate, status } = params;
   const [data, setData] = useState<ProposalList | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // 再計算が終わったが、保存していない入力があるため一覧を差し替えていない
+  const [hasUpdate, setHasUpdate] = useState(false);
   // 条件を変えた後に古い要求の結果で上書きしないための番号
   const seq = useRef(0);
   // 進捗の取得が続けて失敗した回数
@@ -35,6 +41,7 @@ export function useProposals(params: ProposalParams, opts: { pollMs?: number } =
       if (mine !== seq.current) return;
       setData(res);
       setJob(res.job);
+      setHasUpdate(false);
       setError(null);
     } catch (e) {
       if (mine === seq.current) setError(errorMessage(e));
@@ -44,6 +51,8 @@ export function useProposals(params: ProposalParams, opts: { pollMs?: number } =
   }, [departmentCode, targetDate, status]);
 
   useEffect(() => {
+    // 条件が変わったら、前の条件の「新しい計算結果があります」は消す(取得に失敗しても残さない)
+    setHasUpdate(false);
     void reload();
   }, [reload]);
 
@@ -60,7 +69,11 @@ export function useProposals(params: ProposalParams, opts: { pollMs?: number } =
           setJob(next);
         } else if (next.status === "succeeded") {
           setJob(null);
-          await reload();
+          if (holdUpdates.current?.()) {
+            setHasUpdate(true);
+          } else {
+            await reload();
+          }
         } else {
           setJob(next);
           setError(`最新の予測の計算に失敗しました: ${next.error ?? ""}`);
@@ -95,5 +108,5 @@ export function useProposals(params: ProposalParams, opts: { pollMs?: number } =
     }
   }, [departmentCode, targetDate]);
 
-  return { data, error, setError, loading, job, reload, recalculate };
+  return { data, error, setError, loading, job, reload, recalculate, hasUpdate, applyUpdate: reload };
 }

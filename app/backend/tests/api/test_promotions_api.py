@@ -61,6 +61,8 @@ def test_promotions_department_filter_and_order(client, login, user_factory, pro
     client.post("/api/promotions", json=_promo(product="VEG-001", start="2026-10-20", end="2026-10-26"))
     rows = client.get("/api/promotions", params={"department_code": "VEG"}).json()
     assert [(p["product_code"], p["start_date"]) for p in rows] == [("VEG-001", "2026-10-20"), ("VEG-002", "2026-10-25")]
+    # 担当者が他部門の行を見ても部門コードのままにならないよう、部門名を返す(PR #2 指摘10)
+    assert {p["department_name"] for p in rows} == {"青果"}
 
 
 @pytest.mark.db

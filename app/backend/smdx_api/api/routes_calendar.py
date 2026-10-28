@@ -1,7 +1,7 @@
 """祝日・行事日カレンダー(F-05)。閲覧は全員、登録・削除は店長のみ。"""
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -20,7 +20,11 @@ def _out(d: CalendarDay) -> CalendarDayOut:
 
 
 @router.get("/calendar", response_model=list[CalendarDayOut])
-def list_calendar(year: int | None = None, _: Principal = Depends(current_user), db: Session = Depends(get_db)):
+def list_calendar(
+    year: int | None = Query(default=None, ge=1, le=9999),
+    _: Principal = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     q = select(CalendarDay).order_by(CalendarDay.date, CalendarDay.kind)
     if year is not None:
         q = q.where(CalendarDay.date >= date(year, 1, 1), CalendarDay.date <= date(year, 12, 31))

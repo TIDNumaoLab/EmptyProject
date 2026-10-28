@@ -15,6 +15,9 @@ def test_candidates_are_rf_and_lightgbm_with_seed():
     assert c["lightgbm"].named_steps["model"].random_state == 7
     # n_jobs を指定しないと LightGBM が物理コア数を調べ、Windows では長いエラーを表示する(本体での推論時も)
     assert c["lightgbm"].named_steps["model"].n_jobs == -1
+    # スレッド数によって結果が変わらないよう、決定的な計算にする(PR #4 本文の軽微な課題)
+    params = c["lightgbm"].named_steps["model"].get_params()
+    assert params["deterministic"] is True and params["force_row_wise"] is True
 
 
 def test_fit_candidates_predicts(sample_dir):

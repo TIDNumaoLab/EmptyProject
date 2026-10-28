@@ -20,6 +20,8 @@ interface Props {
   onApprove(): void;
   onCancel(): void;
   onAdopt(): void;
+  // 保存していない数量の入力があるかが変わったとき(id は提案の ID)
+  onDirtyChange?(id: number, dirty: boolean): void;
 }
 
 function num(v: number | null, digits?: number): string {
@@ -35,20 +37,26 @@ function weatherText(p: Proposal): string {
   return parts.join(" ");
 }
 
-export default function ProposalRow({ proposal: p, selected, skippedReason, approveLocked = false, onSelect, onSave, onApprove, onCancel, onAdopt }: Props) {
+export default function ProposalRow({ proposal: p, selected, skippedReason, approveLocked = false, onSelect, onSave, onApprove, onCancel, onAdopt, onDirtyChange }: Props) {
   const [qty, setQty] = useState(String(p.proposed_qty));
   const [reason, setReason] = useState<AdjustReason | "">("");
   const [note, setNote] = useState("");
-  // 保存などで提案が更新されたら入力欄を新しい値に戻す
+  // 保存・承認などで提案数や状態が変わったら入力欄を新しい値に戻す。
+  // updated_at は再計算で提案数が同じでも変わるため、きっかけにしない(保存していない入力を消さないように)
   useEffect(() => {
     setQty(String(p.proposed_qty));
     setReason("");
     setNote("");
-  }, [p.proposed_qty, p.updated_at]);
+  }, [p.proposed_qty, p.status, p.is_adjusted, p.adjust_reason]);
 
   const pending = p.status === "pending";
   const beforeDeadline = Date.now() < new Date(p.deadline).getTime();
   const dirty = qty !== String(p.proposed_qty);
+  useEffect(() => {
+    onDirtyChange?.(p.id, dirty);
+  }, [p.id, dirty, onDirtyChange]);
+  // 行が消えたら入力も無くなる
+  useEffect(() => () => onDirtyChange?.(p.id, false), [p.id, onDirtyChange]);
   const valid = /^\d+$/.test(qty.trim());
   const name = p.product_name;
 

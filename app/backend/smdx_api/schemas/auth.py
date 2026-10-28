@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 
 class LoginRequest(BaseModel):
     login_id: str = Field(min_length=1, max_length=32)
-    password: str = Field(min_length=1)
+    # 極端に長い入力で argon2 の計算をさせないよう上限を設ける
+    password: str = Field(min_length=1, max_length=256)
 
 
 class DepartmentRef(BaseModel):

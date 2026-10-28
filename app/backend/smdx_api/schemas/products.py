@@ -6,6 +6,7 @@ class ProductOut(BaseModel):
     product_code: str
     name: str
     department_code: str
+    department_name: str
     order_unit: int
     lead_time_days: int
     can_carry_over: bool

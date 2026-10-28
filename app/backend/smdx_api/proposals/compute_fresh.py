@@ -101,7 +101,8 @@ def compute_fresh(
     targets: FreshTargets,
 ) -> tuple[list[ComputedProposal], str | None]:
     """部門の生鮮の提案を計算する(保存はしない)。2つ目の戻り値は予測の注記(時間帯の設定変更など)。"""
-    # 発注残の集計の前に、期限経過による状態更新を行う
+    # 発注残の集計の前に、期限経過による状態更新を行う。ジョブ(run_job)からは先に確定済みのため、
+    # ここでは対象の行が無くロックも取らない。ジョブを通さずに呼ぶ場合(試験など)のために残す
     apply_deadlines(db, now, department.id)
     products = department_products(db, department)
     target_by_id = fresh_target_dates(products, now, settings, targets)
@@ -116,7 +117,10 @@ def compute_fresh(
     since = today - timedelta(days=inputs.HISTORY_DAYS)
     ids = [p.id for p in products]
 
+    # 商品ごとに問い合わせず、部門の商品をまとめて読む
     inventory = inputs.latest_inventory_today(db, ids, now)
+    hourly_by_id = inputs.hourly_sales_rows(db, ids, since)
+    orders_by_id = inputs.confirmed_orders(db, ids, min([v[1].date() for v in inventory.values()] + [today]), last_day)
     latest_pos = inputs.latest_pos_date(db, department.id)
     missing = inputs.missing_pos_days(db, department.id, since, latest_pos) if latest_pos else set()
     forecast = get_forecast(db, services.weather_client, today, last_day, now, settings.weather_stale_hours)
@@ -153,7 +157,7 @@ def compute_fresh(
 
         # 基準日の残り分 + 途中の日 + 納品日の納品前の分。当日が納品日の場合(リードタイム0)は販売見込を数えない
         if target > today:
-            hourly = list(inputs.hourly_sales_rows(db, p.id, since))
+            hourly = hourly_by_id.get(p.id, [])
             until = today - timedelta(days=1)
             ratio = hourly_sales_ratio(hourly, today.weekday(), until)
             remaining = remaining_sales_ratio(based_at.time(), settings.business_open, settings.business_close, ratio)
@@ -162,7 +166,7 @@ def compute_fresh(
                                            settings.business_close, hourly_sales_ratio(hourly, target.weekday(), until))
         else:
             sales = 0.0
-        backlog = inputs.backlog_qty(db, p.id, based_at, target, delivery_time)
+        backlog = inputs.backlog_qty(orders_by_id.get(p.id, []), based_at, target, delivery_time)
         demand = batch.values[last]
         result = calc_fresh_order(FreshInput(
             demand_forecast=demand, expected_sales_qty=sales, inventory_qty=inv[0] if inv else None,
