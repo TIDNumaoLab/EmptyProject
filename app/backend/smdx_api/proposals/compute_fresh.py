@@ -20,6 +20,7 @@ from smdx_api.order_calc.fresh import (
     expected_sales,
     hourly_sales_ratio,
     remaining_sales_ratio,
+    sales_before_delivery,
 )
 from smdx_api.predictor.predict import predict
 from smdx_api.predictor.registry import ModelRegistry
@@ -150,11 +151,15 @@ def compute_fresh(
         inv = inventory.get(p.id)
         based_at = inv[1] if inv else now.astimezone(JST)
 
-        # 基準日の残り分 + 途中の日。当日が納品日の場合(リードタイム0)は販売見込を数えない
+        # 基準日の残り分 + 途中の日 + 納品日の納品前の分。当日が納品日の場合(リードタイム0)は販売見込を数えない
         if target > today:
-            ratio = hourly_sales_ratio(inputs.hourly_sales_rows(db, p.id, since), today.weekday(), today - timedelta(days=1))
+            hourly = list(inputs.hourly_sales_rows(db, p.id, since))
+            until = today - timedelta(days=1)
+            ratio = hourly_sales_ratio(hourly, today.weekday(), until)
             remaining = remaining_sales_ratio(based_at.time(), settings.business_open, settings.business_close, ratio)
             sales = expected_sales(batch.values[first], remaining, batch.values[first + 1:last])
+            sales += sales_before_delivery(batch.values[last], delivery_time, settings.business_open,
+                                           settings.business_close, hourly_sales_ratio(hourly, target.weekday(), until))
         else:
             sales = 0.0
         backlog = inputs.backlog_qty(db, p.id, based_at, target, delivery_time)

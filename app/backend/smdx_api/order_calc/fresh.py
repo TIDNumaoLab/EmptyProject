@@ -2,6 +2,7 @@
 
 販売見込 = 在庫基準日時から納品時刻までの予測販売数
          = 基準日の残り分(日別予測 × 残り営業時間の売上構成比)+ 途中の日の日別予測
+           + 納品日の納品前の分(納品日の日別予測 × 開店から納品時刻までの売上構成比)
 持越見込 = max(0, 在庫数 + 発注残 − 販売見込)   ※持越不可の商品・在庫が無い場合は0
 必要数   = カバー期間の予測需要 × 安全係数
 発注数   = 発注単位で切り上げ(max(0, 必要数 − 持越見込))
@@ -63,6 +64,13 @@ def remaining_sales_ratio(
 
 def expected_sales(base_day_forecast: float, remaining_ratio: float, middle_day_forecasts: Sequence[float]) -> float:
     return base_day_forecast * remaining_ratio + sum(middle_day_forecasts)
+
+
+def sales_before_delivery(
+    delivery_day_forecast: float, delivery: time, open_: time, close: time, hourly_ratio: Mapping[int, float] | None
+) -> float:
+    """納品日の開店から納品時刻までに売れる分。納品が開店前なら0(hourly_ratio は納品日と同じ曜日の比率)。"""
+    return delivery_day_forecast * (1.0 - remaining_sales_ratio(delivery, open_, close, hourly_ratio))
 
 
 @dataclass(frozen=True)

@@ -36,6 +36,19 @@ def test_compute_fresh_design_flow(db, veg_setup, fixed_now, baseline_services):
 
 
 @pytest.mark.db
+def test_delivery_after_open_counts_sales_before_delivery(db, veg_setup, fixed_now, baseline_services):
+    from smdx_api.db.models import Setting
+
+    db.add(Setting(key="delivery_time.VEG", value="12:00"))
+    db.flush()
+    c = one(run(db, fixed_now.value, baseline_services)[0], "VEG-001")
+    # 納品日 10/17 の予測 20 のうち、開店 10:00〜納品 12:00 の分 = 20 × (1 − 8/10) = 4
+    # 販売見込 5.5 + 4 = 9.5、持越見込 max(0, 8 − 9.5) = 0、必要数 22 → 入数6で 24
+    assert c.basis["expected_sales_qty"] == pytest.approx(9.5) and c.basis["carry_over_qty"] == 0
+    assert c.qty == 24
+
+
+@pytest.mark.db
 def test_uses_model_when_weather_available(db, veg_setup, fixed_now, tmp_path):
     services = ComputeServices(const_registry(tmp_path, 5.0), baseline_services_weather())
     c = one(run(db, fixed_now.value, services)[0], "VEG-001")
