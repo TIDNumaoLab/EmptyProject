@@ -6,7 +6,7 @@ import * as productsApi from "../src/api/products";
 import * as proposalsApi from "../src/api/proposals";
 import * as settingsApi from "../src/api/settings";
 import ProductionPage from "../src/pages/ProductionPage";
-import type { Product, Proposal } from "../src/types/api";
+import type { DepartmentRef, Product, Proposal } from "../src/types/api";
 import { DELI, VEG, renderPage, staff } from "./helpers";
 import { listResponse, proposal, running } from "./proposalFixtures";
 
@@ -72,10 +72,29 @@ test("shows which day the plan is for", async () => {
   // 9:00 以後の既定表示は翌日の計画。製造開始の列は時刻だけなので、どの日の計画かを画面上部に出す
   vi.setSystemTime(new Date("2026-10-16T10:00:00+09:00"));
   vi.mocked(proposalsApi.listProposals).mockResolvedValue(
-    listResponse([deli({ target_date: "2026-10-17", time_band: 10, deadline: "2026-10-17T09:00:00+09:00" })]),
+    listResponse([deli({ target_date: "2026-10-17", time_band: 10, deadline: "2026-10-17T09:00:00+09:00" })], null,
+      { target_date: "2026-10-17" }),
   );
   await renderPage(<ProductionPage />, staff(DELI), "製造計画");
   expect(await screen.findByText("10/17 の製造計画")).toBeInTheDocument();
+});
+
+test("shows which day the plan is for while there are no proposals yet", async () => {
+  vi.mocked(proposalsApi.listProposals).mockResolvedValue(listResponse([], running(0, 4), { target_date: "2026-10-16" }));
+  vi.mocked(proposalsApi.getJob).mockReturnValue(new Promise(() => {}));
+  await renderPage(<ProductionPage />, staff(DELI), "製造計画");
+  expect(await screen.findByText("10/16 の製造計画")).toBeInTheDocument();
+});
+
+test("switching department does not show the previous department's products", async () => {
+  const BENTO: DepartmentRef = { code: "BENTO", name: "弁当", business_type: "production" };
+  vi.mocked(productsApi.listProducts).mockImplementation((code) =>
+    code === "DELI" ? Promise.resolve([KARAAGE]) : new Promise(() => {}),
+  );
+  await renderPage(<ProductionPage />, staff(DELI, BENTO), "製造計画");
+  expect(await screen.findByLabelText("唐揚げ の陳列残数")).toBeInTheDocument();
+  await userEvent.setup().selectOptions(screen.getByLabelText("部門"), "BENTO");
+  await waitFor(() => expect(screen.queryByLabelText("唐揚げ の陳列残数")).not.toBeInTheDocument());
 });
 
 test("shows notice from list response", async () => {
@@ -96,7 +115,9 @@ test("approve sends the shown quantity", async () => {
 
 test("saving display stock shows the plan of the day and tracks the recalculation", async () => {
   vi.setSystemTime(new Date("2026-10-16T12:00:00+09:00"));
-  vi.mocked(productionApi.putDisplayStock).mockResolvedValue({ saved: 1, job: running(0, 2) });
+  vi.mocked(productionApi.putDisplayStock).mockResolvedValue({
+    saved: 1, entered_at: "2026-10-16T12:00:00+09:00", job: running(0, 2),
+  });
   vi.mocked(proposalsApi.getJob).mockReturnValue(new Promise(() => {}));
   await renderPage(<ProductionPage />, staff(DELI), "製造計画");
   const user = userEvent.setup();
@@ -112,7 +133,9 @@ test("saving display stock shows the plan of the day and tracks the recalculatio
 
 test("tracks the returned job when the plan of the day is already shown", async () => {
   vi.setSystemTime(new Date("2026-10-16T12:00:00+09:00"));
-  vi.mocked(productionApi.putDisplayStock).mockResolvedValue({ saved: 1, job: running(0, 2) });
+  vi.mocked(productionApi.putDisplayStock).mockResolvedValue({
+    saved: 1, entered_at: "2026-10-16T12:00:00+09:00", job: running(0, 2),
+  });
   vi.mocked(proposalsApi.getJob).mockReturnValue(new Promise(() => {}));
   await renderPage(<ProductionPage />, staff(DELI), "製造計画");
   const user = userEvent.setup();

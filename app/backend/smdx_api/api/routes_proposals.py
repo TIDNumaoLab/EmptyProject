@@ -172,7 +172,8 @@ def list_proposals(
     else:
         job = _running_job(db, department, key, now)
     shown = _shown(db, department, now, settings, targets, status)
-    return ProposalListOut(proposals=proposals_out(db, shown), freshness=_freshness(shown),
+    shown_date = deli_target(now, settings, targets) if is_production(department) else targets.explicit_date
+    return ProposalListOut(proposals=proposals_out(db, shown), target_date=shown_date, freshness=_freshness(shown),
                            job=job_out(job) if job else None, notice=_last_notice(db, department, key))
 
 

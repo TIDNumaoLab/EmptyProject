@@ -18,6 +18,8 @@ def test_production_list_default_target_and_rows(client, login, user_factory, de
     login(client, user_factory(departments=("DELI",)))
     first = list_deli(client)  # ジョブ開始(応答の後に完了)
     assert first["proposals"] == [] and first["job"]["status"] == "running" and first["job"]["total"] == 4
+    # 提案がまだ無くても、一覧の対象日(既定の対象日)を返す
+    assert first["target_date"] == "2026-10-16"
     job = db.get(ProposalJob, first["job"]["id"])
     assert (job.scope, job.target_date.isoformat()) == ("date", "2026-10-16")
     body = list_deli(client)
@@ -35,9 +37,12 @@ def test_default_target_is_tomorrow_from_first_production_start(client, login, u
                                                                  fixed_now):
     fixed_now.set(jst(2026, 10, 16, 9, 0))
     login(client, user_factory(departments=("DELI",)))
-    list_deli(client)
+    assert list_deli(client)["target_date"] == "2026-10-17"
     rows = list_deli(client)["proposals"]
     assert {p["target_date"] for p in rows} == {"2026-10-17"} and len(rows) == 4
+    # 状態で絞って0件でも対象日は返す
+    empty = list_deli(client, status="expired")
+    assert empty["proposals"] == [] and empty["target_date"] == "2026-10-17"
 
 
 @pytest.mark.db

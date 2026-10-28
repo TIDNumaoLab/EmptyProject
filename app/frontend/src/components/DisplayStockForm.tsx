@@ -1,9 +1,9 @@
 // 惣菜の陳列残数の入力欄(詳細設計書「製造計画(/production)」)。
-// 商品ごとに入力し、保存した時刻を入力時刻として当日の分を送る。入力した商品だけを送り、保存後は返ったジョブを親に渡す
+// 商品ごとに入力し、当日の分を送る(入力時刻は保存時のサーバーの時刻)。入力した商品だけを送り、保存後は返ったジョブを親に渡す
 import { useState, type FormEvent } from "react";
 import { errorMessage } from "../api/client";
 import { putDisplayStock } from "../api/production";
-import { jstNowInput, jstToday, toJstIso } from "../format";
+import { formatTime, jstToday } from "../format";
 import styles from "../styles/page.module.css";
 import type { Job } from "../types/api";
 import ErrorBanner from "./ErrorBanner";
@@ -32,7 +32,6 @@ export default function DisplayStockForm({ departmentCode, products, onSaved }: 
       setError(INVALID);
       return;
     }
-    const now = jstNowInput();
     const target = jstToday();
     setSaving(true);
     setError(null);
@@ -40,11 +39,10 @@ export default function DisplayStockForm({ departmentCode, products, onSaved }: 
       const res = await putDisplayStock({
         department_code: departmentCode,
         target_date: target,
-        entered_at: toJstIso(now),
         items: filled.map((p) => ({ product_code: p.product_code, quantity: Number(values[p.product_code].trim()) })),
       });
       setValues({});
-      setMessage(`陳列残数を保存しました(${now.slice(11)} 時点)`);
+      setMessage(`陳列残数を保存しました(${formatTime(res.entered_at)} 時点)`);
       onSaved(res.job, target);
     } catch (err) {
       setError(errorMessage(err));
@@ -57,7 +55,10 @@ export default function DisplayStockForm({ departmentCode, products, onSaved }: 
     // ブラウザの入力検証ではなく、画面の文言で知らせる
     <form className={styles.section} noValidate onSubmit={(e) => void submit(e)}>
       <h2>陳列残数の入力</h2>
-      <p className={styles.muted}>保存した時刻の直後の時間帯から差し引き、製造開始前の時間帯を計算し直します。</p>
+      <p className={styles.muted}>
+        保存した時刻の直後の時間帯から差し引き、製造開始前の時間帯を計算し直します。
+        各時間帯の製造開始から開始時刻までに保存した分は、その時間帯の製造が始まっているため製造数に反映されません。
+      </p>
       <ErrorBanner message={error} />
       {message && <div className={styles.notice}>{message}</div>}
       <div className={styles.toolbar}>

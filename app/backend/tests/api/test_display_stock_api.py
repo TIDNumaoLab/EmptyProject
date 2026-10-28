@@ -10,8 +10,8 @@ from tests.conftest import jst
 URL = "/api/production/display-stock"
 
 
-def body(department="DELI", target="2026-10-16", entered_at="2026-10-16T12:00:00+09:00", items=None):
-    return {"department_code": department, "target_date": target, "entered_at": entered_at,
+def body(department="DELI", target="2026-10-16", items=None):
+    return {"department_code": department, "target_date": target,
             "items": [{"product_code": "DELI-001", "quantity": 3}] if items is None else items}
 
 
@@ -57,14 +57,18 @@ def test_display_stock_updates_pending_band(client, login, user_factory, deli_se
 
 
 @pytest.mark.db
-def test_display_stock_entered_after_now_is_saved_as_now(client, login, user_factory, deli_setup, test_services,
-                                                         fixed_now, db):
-    """画面の端末の時計が進んでいても、入力時刻はサーバーの現在時刻までにそろえ、保存直後の再計算に効かせる。"""
+@pytest.mark.parametrize("sent", ["2026-10-16T10:58:00+09:00", "2026-10-16T12:02:00+09:00"])
+def test_display_stock_entered_at_is_server_now(client, login, user_factory, deli_setup, test_services, fixed_now, db,
+                                                sent):
+    """入力時刻は保存時のサーバーの時刻。端末の時計が遅れて(進んで)いても、送られた時刻は使わない。"""
     login(client, user_factory(departments=("DELI",)))
     deli_rows(client)
     fixed_now.set(jst(2026, 10, 16, 12, 0))
-    assert client.put(URL, json=body(entered_at="2026-10-16T12:02:00+09:00")).status_code == 200
+    res = client.put(URL, json={**body(), "entered_at": sent})
+    assert res.status_code == 200, res.text
+    assert res.json()["entered_at"] == "2026-10-16T12:00:00+09:00"
     assert [e.entered_at for e in db.scalars(select(DisplayStockEntry))] == [jst(2026, 10, 16, 12, 0)]
+    # 遅れた時刻(10:58)を使うと 11時帯(製造開始済み)に入り効かないが、12:00 なので 14時帯に効く
     assert deli_rows(client)[14]["proposed_qty"] == 1
 
 
@@ -106,8 +110,6 @@ def test_display_stock_target_out_of_range_is_400(client, login, user_factory, d
     ({"items": [{"product_code": "VEG-009", "quantity": 1}]}, "この部門の商品ではありません: VEG-009"),
     ({"items": [{"product_code": "NOPE", "quantity": 1}]}, "未登録の商品コードです: NOPE"),
     ({"items": [{"product_code": "DELI-001", "quantity": -1}]}, None),
-    # タイムゾーンの無い入力時刻は受け付けない
-    ({"entered_at": "2026-10-16T12:00:00"}, None),
 ])
 def test_display_stock_validation(client, login, user_factory, deli_setup, product_factory, db, override, detail):
     product_factory(code="VEG-009")

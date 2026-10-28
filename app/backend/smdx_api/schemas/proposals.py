@@ -75,6 +75,8 @@ class FreshnessOut(BaseModel):
 
 class ProposalListOut(BaseModel):
     proposals: list[ProposalOut]
+    # 一覧の対象日。惣菜は既定表示でも決めた日、生鮮の既定表示は商品ごとに日が異なるため None
+    target_date: dt.date | None
     freshness: FreshnessOut
     job: JobOut | None
     notice: str | None

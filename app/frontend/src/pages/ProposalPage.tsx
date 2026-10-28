@@ -77,12 +77,21 @@ export default function ProposalPage({ mode }: { mode: ProposalMode }) {
       .catch((e) => setActionError(errorMessage(e)));
   }, []);
 
-  // 製造計画: 陳列残数の入力欄の商品
+  // 製造計画: 陳列残数の入力欄の商品。部門を切り替えたら前の部門の商品は出さず、遅れて届いた前の部門の結果も使わない
   useEffect(() => {
     if (!production || !department) return;
+    let stale = false;
+    setProducts([]);
     listProducts(department)
-      .then((rows) => setProducts(rows.filter((p) => p.is_active)))
-      .catch((e) => setActionError(errorMessage(e)));
+      .then((rows) => {
+        if (!stale) setProducts(rows.filter((p) => p.is_active));
+      })
+      .catch((e) => {
+        if (!stale) setActionError(errorMessage(e));
+      });
+    return () => {
+      stale = true;
+    };
   }, [production, department]);
 
   const bandLabel = useMemo(() => (production ? bandLabels(settings) : null), [production, settings]);
@@ -136,15 +145,15 @@ export default function ProposalPage({ mode }: { mode: ProposalMode }) {
 
   const recalculating = job?.status === "running";
   const cutoff = production ? undefined : settings?.[`order_cutoff.${department}`];
-  // 製造計画の対象日(一覧は1つの対象日の時間帯だけを返す)
-  const planDate = targetDate || data?.proposals[0]?.target_date;
+  // 製造計画の対象日(一覧の応答の対象日。提案が0件でも出す)
+  const planDate = data?.target_date;
 
   return (
     <section>
       <h1>{production ? "製造計画" : "発注"}</h1>
       <ErrorBanner message={actionError ?? error} />
       {typeof cutoff === "string" && <p className={proposalStyles.cutoff}>発注締め {cutoff} まで</p>}
-      {/* 製造開始の列は時刻だけなので、どの日の計画かを出す(9:00 以後の既定表示は翌日) */}
+      {/* 製造開始の列は時刻だけなので、どの日の計画かを出す(最初の時間帯の製造開始以後の既定表示は翌日) */}
       {production && planDate && <p className={proposalStyles.cutoff}>{formatMonthDay(planDate)} の製造計画</p>}
       <div className={styles.toolbar}>
         <DepartmentSelect value={department} onChange={setDepartment} businessType={mode} />

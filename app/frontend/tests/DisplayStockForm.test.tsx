@@ -15,14 +15,16 @@ const PRODUCTS = [
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-16T12:00:00+09:00"));
-  vi.mocked(productionApi.putDisplayStock).mockResolvedValue({ saved: 1, job: running(0, 2) });
+  vi.mocked(productionApi.putDisplayStock).mockResolvedValue({
+    saved: 1, entered_at: "2026-10-16T12:03:00+09:00", job: running(0, 2),
+  });
 });
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
-test("display stock form sends entered_at as now and only filled products", async () => {
+test("display stock form sends only filled products and shows the server's entered time", async () => {
   const onSaved = vi.fn();
   render(<DisplayStockForm departmentCode="DELI" products={PRODUCTS} onSaved={onSaved} />);
   const user = userEvent.setup();
@@ -31,12 +33,18 @@ test("display stock form sends entered_at as now and only filled products", asyn
   expect(productionApi.putDisplayStock).toHaveBeenCalledWith({
     department_code: "DELI",
     target_date: "2026-10-16",
-    entered_at: "2026-10-16T12:00:00+09:00",
     items: [{ product_code: "DELI-001", quantity: 3 }],
   });
   expect(onSaved).toHaveBeenCalledWith(running(0, 2), "2026-10-16");
-  expect(await screen.findByText("陳列残数を保存しました(12:00 時点)")).toBeInTheDocument();
+  // 入力時刻は端末の時計(12:00)ではなく、応答のサーバーの時刻
+  expect(await screen.findByText("陳列残数を保存しました(12:03 時点)")).toBeInTheDocument();
   expect(screen.getByLabelText("唐揚げ の陳列残数")).toHaveValue(null);
+});
+
+test("explains that stock entered after a band's production start does not change it", () => {
+  render(<DisplayStockForm departmentCode="DELI" products={PRODUCTS} onSaved={vi.fn()} />);
+  expect(screen.getByText(/製造開始から開始時刻までに保存した分は、その時間帯の製造が始まっているため製造数に反映されません/))
+    .toBeInTheDocument();
 });
 
 test("save is disabled until a quantity is entered", async () => {

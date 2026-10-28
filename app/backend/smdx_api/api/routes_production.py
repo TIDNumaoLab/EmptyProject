@@ -29,8 +29,8 @@ def put_display_stock(
     """保存し、その部門×対象日の再計算ジョブを最新性判定なしで開始する(手動再計算と同じ。実行中があればそれを返す)。"""
     department = department_of_type(body.department_code, p, db, "production")
     targets = parse_targets(body.target_date, now)
-    # 入力時刻は保存時の時刻。画面の端末の時計が進んでいても、現在より後の入力は保存直後の計算に使われないため、現在までにそろえる
-    entered_at = min(body.entered_at, now)
+    # 入力時刻は保存時のサーバーの時刻(端末の時計を使うと、ずれで割り当て先の時間帯が変わる)
+    entered_at = now
     try:
         n = save_display_stock(db, department, body.target_date, entered_at,
                                [(i.product_code, i.quantity) for i in body.items], p.user_id)
@@ -43,4 +43,4 @@ def put_display_stock(
     job, created = start_or_get_job(db, department, job_key(department, now, settings, targets), now, total)
     if created:
         launcher.launch(background_tasks, job.id, targets)
-    return DisplayStockOut(saved=n, job=job_out(job))
+    return DisplayStockOut(saved=n, entered_at=entered_at, job=job_out(job))
