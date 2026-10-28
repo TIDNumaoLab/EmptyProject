@@ -69,6 +69,30 @@ def test_cancel_after_deadline_is_409(client, login, user_factory, proposal_fact
 
 
 @pytest.mark.db
+def test_failed_action_keeps_deadline_update_and_runs_it_once(client, login, user_factory, proposal_factory, fixed_now,
+                                                              db, monkeypatch):
+    """期限経過の更新は操作が条件違反でも残す。更新は1回の要求で1度だけ、提案の部門に限って行う。"""
+    from smdx_api.proposals import actions, deadlines
+    from tests.conftest import jst
+
+    calls = []
+
+    def counting(db_, now, department_id=None):
+        calls.append(department_id)
+        return deadlines.apply_deadlines(db_, now, department_id)
+
+    monkeypatch.setattr(actions, "apply_deadlines", counting)
+    login(client, user_factory(departments=("VEG",)))
+    p = proposal_factory(deadline=jst(2026, 10, 16, 20))
+    fixed_now.set(jst(2026, 10, 16, 20))
+    res = client.post(f"/api/proposals/{p.id}/approve", json={"expected_qty": 10})
+    assert res.status_code == 409 and res.json()["detail"] == "未承認の提案ではありません"
+    db.refresh(p)
+    assert p.status == "expired"
+    assert calls == [p.department_id]
+
+
+@pytest.mark.db
 def test_cancel_and_adopt_api(client, login, user_factory, proposal_factory, fixed_now):
     login(client, user_factory(departments=("VEG",)))
     p = proposal_factory(status="approved", qty=24, recalculated_qty=30)

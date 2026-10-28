@@ -206,33 +206,27 @@ def _check_access(db: Session, proposal_id: int, p: Principal) -> None:
 
 
 def _act(db: Session, fn, *args) -> ProposalOut:
+    """操作を行う。条件違反でも、操作の冒頭で行った期限経過の更新は確定する(操作は条件を確かめてから提案を変える)。"""
     try:
         row = fn(db, *args)
     except ProposalNotFound:
         db.rollback()
         raise HTTPException(status_code=404, detail=NOT_FOUND) from None
     except StateError as e:
-        db.rollback()
+        db.commit()
         raise HTTPException(status_code=409, detail=e.message) from None
     except InputError as e:
-        db.rollback()
+        db.commit()
         raise HTTPException(status_code=422, detail=e.message) from None
     db.commit()
     db.refresh(row)
     return proposals_out(db, [row])[0]
 
 
-def _prepare(db: Session, proposal_id: int, p: Principal, now: datetime) -> None:
-    _check_access(db, proposal_id, p)
-    # 期限経過の更新は、操作が条件違反で取り消されても残す
-    apply_deadlines(db, now)
-    db.commit()
-
-
 @router.patch("/{proposal_id}", response_model=ProposalOut)
 def adjust_proposal(proposal_id: int, body: AdjustIn, p: Principal = Depends(current_user),
                     db: Session = Depends(get_db), now: datetime = Depends(get_now)) -> ProposalOut:
-    _prepare(db, proposal_id, p, now)
+    _check_access(db, proposal_id, p)
     return _act(db, actions.adjust, proposal_id, body.quantity, body.reason, body.reason_note, p.user_id, now)
 
 
@@ -251,19 +245,19 @@ def approve_bulk(body: BulkApproveIn, p: Principal = Depends(current_user), db: 
 @router.post("/{proposal_id}/approve", response_model=ProposalOut)
 def approve_proposal(proposal_id: int, body: ApproveIn, p: Principal = Depends(current_user),
                      db: Session = Depends(get_db), now: datetime = Depends(get_now)) -> ProposalOut:
-    _prepare(db, proposal_id, p, now)
+    _check_access(db, proposal_id, p)
     return _act(db, actions.approve, proposal_id, body.expected_qty, body.confirm_warnings, p.user_id, now)
 
 
 @router.post("/{proposal_id}/cancel-approval", response_model=ProposalOut)
 def cancel_approval(proposal_id: int, p: Principal = Depends(current_user), db: Session = Depends(get_db),
                     now: datetime = Depends(get_now)) -> ProposalOut:
-    _prepare(db, proposal_id, p, now)
+    _check_access(db, proposal_id, p)
     return _act(db, actions.cancel_approval, proposal_id, p.user_id, now)
 
 
 @router.post("/{proposal_id}/adopt-recalculated", response_model=ProposalOut)
 def adopt_recalculated(proposal_id: int, p: Principal = Depends(current_user), db: Session = Depends(get_db),
                        now: datetime = Depends(get_now)) -> ProposalOut:
-    _prepare(db, proposal_id, p, now)
+    _check_access(db, proposal_id, p)
     return _act(db, actions.adopt_recalculated, proposal_id, p.user_id, now)

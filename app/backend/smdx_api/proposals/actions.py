@@ -1,7 +1,8 @@
 """提案の修正・承認・一括承認・取消・再計算値の採用(詳細設計書「提案の状態遷移」)。
 
-いずれも先頭で期限経過の状態更新を行い、対象の行を FOR UPDATE で読み直してから条件を確かめる。
-条件の違反は StateError(409)、入力の不備は InputError(422)。操作のたびに proposal_histories に記録する。
+いずれも先頭で期限経過の状態更新(個別の操作では提案の部門に限る)を行い、対象の行を FOR UPDATE で読み直してから
+条件を確かめる。条件の違反は StateError(409)、入力の不備は InputError(422)。操作のたびに proposal_histories に記録する。
+条件の確認は提案を変える前に行う。違反のとき、呼び出し側は期限経過の更新だけを確定できる。
 """
 from collections.abc import Sequence
 from datetime import datetime
@@ -26,7 +27,10 @@ def _lock(db: Session, proposal_id: int) -> Proposal | None:
 
 
 def _get(db: Session, proposal_id: int, now: datetime) -> Proposal:
-    apply_deadlines(db, now)
+    department_id = db.scalar(select(Proposal.department_id).where(Proposal.id == proposal_id))
+    if department_id is None:
+        raise ProposalNotFound(proposal_id)
+    apply_deadlines(db, now, department_id)
     p = _lock(db, proposal_id)
     if p is None:
         raise ProposalNotFound(proposal_id)
