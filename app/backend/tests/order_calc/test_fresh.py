@@ -10,6 +10,7 @@ from smdx_api.order_calc.fresh import (
     expected_sales,
     hourly_sales_ratio,
     remaining_sales_ratio,
+    sales_before_delivery,
 )
 
 
@@ -72,3 +73,14 @@ def test_hourly_ratio_same_weekday_last_8_weeks():
     assert hourly_sales_ratio(rows, weekday=2, until=date(2026, 10, 15)) == {10: 0.25, 11: 0.75}
     assert hourly_sales_ratio([], 2, date(2026, 10, 15)) is None
     assert hourly_sales_ratio([(date(2026, 10, 16), 10, 5)], 4, date(2026, 10, 15)) is None  # until より後は使わない
+
+
+def test_sales_before_delivery():
+    open_, close = time(10), time(20)
+    # 開店前・開店ちょうどの納品は0
+    assert sales_before_delivery(20, time(7), open_, close, None) == 0
+    assert sales_before_delivery(20, time(10), open_, close, None) == 0
+    # 時刻つきPOSが無ければ営業時間の比率: 10:00〜12:00 は 2/10
+    assert sales_before_delivery(20, time(12), open_, close, None) == pytest.approx(4)
+    # 比率があればそれを使う: 10時 0.5、11時 0.2 → 11:30 納品なら 0.5 + 0.2 × 30/60 = 0.6
+    assert sales_before_delivery(10, time(11, 30), open_, close, {10: 0.5, 11: 0.2, 15: 0.3}) == pytest.approx(6)

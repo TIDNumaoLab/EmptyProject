@@ -31,6 +31,8 @@ class PredictionBatch:
     model_version: str
     is_baseline: bool
     notice: str | None
+    # 予測のときに読み込んでいたモデルの版(無ければ "baseline")。行がベースラインになったかどうかとは別
+    loaded_version: str
 
 
 def baseline_values(features: pd.DataFrame) -> tuple[list[float], list[bool]]:
@@ -41,8 +43,8 @@ def baseline_values(features: pd.DataFrame) -> tuple[list[float], list[bool]]:
     return [0.0 if nh else float(v) for v, nh in zip(base, no_history)], [bool(x) for x in no_history]
 
 
-def _all_baseline(base: list[float], no_history: list[bool], notice: str | None = None) -> PredictionBatch:
-    return PredictionBatch(base, no_history, [True] * len(base), BASELINE_VERSION, True, notice)
+def _all_baseline(base: list[float], no_history: list[bool], loaded_version: str, notice: str | None = None) -> PredictionBatch:
+    return PredictionBatch(base, no_history, [True] * len(base), BASELINE_VERSION, True, notice, loaded_version)
 
 
 def predict(
@@ -55,21 +57,22 @@ def predict(
 ) -> PredictionBatch:
     base, no_history = baseline_values(features)
     loaded = registry.get(granularity)
+    loaded_version = loaded.version if loaded else BASELINE_VERSION
     if loaded is None or not weather_available or features.empty:
-        return _all_baseline(base, no_history)
+        return _all_baseline(base, no_history, loaded_version)
     if granularity == "time_band" and current_time_bands is not None and sorted(loaded.time_bands or []) != sorted(current_time_bands):
-        return _all_baseline(base, no_history, TIME_BANDS_CHANGED)
+        return _all_baseline(base, no_history, loaded_version, TIME_BANDS_CHANGED)
 
     missing_weather = features[list(WEATHER_COLUMNS)].isna().any(axis=1).to_numpy()
     if missing_weather.all():
-        return _all_baseline(base, no_history)
+        return _all_baseline(base, no_history, loaded_version)
     usable = features[~missing_weather]
     try:
         out = np.asarray(loaded.model.predict(usable[loaded.feature_columns]), dtype=float).ravel()
     except Exception:
-        return _all_baseline(base, no_history)
+        return _all_baseline(base, no_history, loaded_version)
     if len(out) != len(usable) or not np.isfinite(out).all():
-        return _all_baseline(base, no_history)
+        return _all_baseline(base, no_history, loaded_version)
 
     model_values = iter(out)
     values, row_is_baseline = [], []
@@ -81,4 +84,4 @@ def predict(
             v = next(model_values)
             values.append(0.0 if nh else max(0.0, float(v)))
             row_is_baseline.append(False)
-    return PredictionBatch(values, no_history, row_is_baseline, loaded.version, False, None)
+    return PredictionBatch(values, no_history, row_is_baseline, loaded.version, False, None, loaded_version)

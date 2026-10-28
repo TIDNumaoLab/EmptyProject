@@ -1,0 +1,101 @@
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import ProposalRow from "../src/components/ProposalRow";
+import type { Proposal } from "../src/types/api";
+import { proposal } from "./proposalFixtures";
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-16T15:10:00+09:00"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+function renderRow(p: Proposal, over: Partial<Parameters<typeof ProposalRow>[0]> = {}) {
+  const handlers = {
+    onSave: vi.fn().mockResolvedValue(undefined),
+    onApprove: vi.fn(),
+    onCancel: vi.fn(),
+    onAdopt: vi.fn(),
+    onSelect: vi.fn(),
+  };
+  render(
+    <table>
+      <tbody>
+        <ProposalRow proposal={p} selected={false} skippedReason={null} {...handlers} {...over} />
+      </tbody>
+    </table>,
+  );
+  return handlers;
+}
+
+test("shows basis of the proposal", () => {
+  renderRow(proposal());
+  const row = screen.getByRole("row");
+  expect(within(row).getByText("10/17")).toBeInTheDocument();
+  expect(within(row).getByText("20.0")).toBeInTheDocument(); // 予測値は小数第1位
+  expect(within(row).getByText("雨 18.5℃ 70%")).toBeInTheDocument();
+  expect(within(row).getByText("特売")).toBeInTheDocument();
+  expect(within(row).getByText("在庫 8 / 発注残 0 / 持越 2.5")).toBeInTheDocument();
+  expect(within(row).getByText("未承認")).toBeInTheDocument();
+  expect(within(row).getByText("ベースライン予測")).toBeInTheDocument();
+});
+
+test("changing quantity requires reason before save", async () => {
+  const h = renderRow(proposal());
+  const user = userEvent.setup();
+  const input = screen.getByLabelText("キャベツ の提案数");
+  await user.clear(input);
+  await user.type(input, "18");
+  const save = screen.getByRole("button", { name: "保存" });
+  expect(save).toBeDisabled();
+  await user.selectOptions(screen.getByLabelText("キャベツ の修正理由"), "weather");
+  expect(save).toBeEnabled();
+  await user.click(save);
+  expect(h.onSave).toHaveBeenCalledWith(18, "weather", undefined);
+});
+
+test("rejects non integer quantity", async () => {
+  const h = renderRow(proposal());
+  const user = userEvent.setup();
+  const input = screen.getByLabelText("キャベツ の提案数");
+  await user.clear(input);
+  await user.type(input, "1.5");
+  await user.selectOptions(screen.getByLabelText("キャベツ の修正理由"), "other");
+  expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+  expect(h.onSave).not.toHaveBeenCalled();
+});
+
+test("warned row is highlighted with warning text", () => {
+  renderRow(proposal({ warnings: ["NO_INVENTORY", "STALE_POS"] }));
+  const row = screen.getByRole("row");
+  expect(row.className).toContain("warned");
+  expect(within(row).getByText("在庫未取込")).toBeInTheDocument();
+  expect(within(row).getByText("POS未更新")).toBeInTheDocument();
+});
+
+test("approved row before deadline has cancel button; diff row has adopt", async () => {
+  const h = renderRow(proposal({ status: "approved", recalculated_qty: 30, approved_by_name: "担当 太郎" }));
+  const user = userEvent.setup();
+  expect(screen.queryByLabelText("キャベツ の提案数")).not.toBeInTheDocument();
+  expect(screen.getByText("再計算: 30(+6)")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "取消" }));
+  await user.click(screen.getByRole("button", { name: "採用" }));
+  expect(h.onCancel).toHaveBeenCalled();
+  expect(h.onAdopt).toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "承認" })).not.toBeInTheDocument();
+});
+
+test("approved row after deadline has no cancel button", () => {
+  vi.setSystemTime(new Date("2026-10-16T20:00:00+09:00"));
+  renderRow(proposal({ status: "approved" }));
+  expect(screen.queryByRole("button", { name: "取消" })).not.toBeInTheDocument();
+});
+
+test("skipped reason from bulk approve is shown", () => {
+  renderRow(proposal({ warnings: ["NO_WEATHER"] }), { skippedReason: "警告があるため一括承認から除外しました" });
+  expect(screen.getByText("警告があるため一括承認から除外しました")).toBeInTheDocument();
+});

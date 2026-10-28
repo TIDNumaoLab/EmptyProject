@@ -1,5 +1,8 @@
 import pytest
 
+from smdx_api.settings.service import SETTINGS_CHANGED_KEY, read_internal_datetime
+from tests.conftest import jst
+
 
 def test_settings_requires_login(client):
     assert client.get("/api/settings").status_code == 401
@@ -40,3 +43,16 @@ def test_put_invalid_bands_is_422_not_500(client, user_factory, login, body):
     login(client, user_factory(role="manager", departments=()))
     res = client.put("/api/settings", json={"settings": body})
     assert res.status_code == 422 and res.json()["detail"][0]["key"] == "deli_time_bands"
+
+
+@pytest.mark.db
+def test_put_settings_records_change_for_recalculation(client, user_factory, login, fixed_now, db):
+    """計算に関わる値が変わったら最新性判定の日時を記録する(判定時間だけの変更・同じ値では記録しない)。"""
+    login(client, user_factory(role="manager", departments=()))
+    client.put("/api/settings", json={"settings": {"weather_stale_hours": 2}})
+    client.put("/api/settings", json={"settings": {"safety_factor.VEG": 1.1}})   # 既定値と同じ
+    assert read_internal_datetime(db, SETTINGS_CHANGED_KEY) is None
+    fixed_now.set(jst(2026, 10, 16, 11))
+    client.put("/api/settings", json={"settings": {"order_cutoff.VEG": "19:00"}})
+    assert read_internal_datetime(db, SETTINGS_CHANGED_KEY) == jst(2026, 10, 16, 11)
+    assert "internal.settings_changed_at" not in client.get("/api/settings").json()["settings"]

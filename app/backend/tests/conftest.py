@@ -5,7 +5,7 @@ DB を使う試験は `@pytest.mark.db` を付け、環境変数 TEST_DATABASE_U
 """
 import itertools
 import os
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -19,7 +19,16 @@ from smdx_api.api.deps import get_db
 from smdx_api.config import AppConfig
 from smdx_api.auth.passwords import hash_password
 from smdx_api.clock import JST, get_now
-from smdx_api.db.models import Department, Product, User, UserDepartment
+from smdx_api.db.models import (
+    Department,
+    Forecast,
+    InventorySnapshot,
+    PosSale,
+    Product,
+    Proposal,
+    User,
+    UserDepartment,
+)
 from smdx_api.db.session import make_engine
 from smdx_api.main import create_app
 
@@ -187,3 +196,140 @@ def product_factory(db):
         return p
 
     return make
+
+
+def jst(y: int, m: int, d: int, hh: int = 0, mm: int = 0) -> datetime:
+    return datetime(y, m, d, hh, mm, tzinfo=JST)
+
+
+@pytest.fixture
+def add_inventory(db):
+    """在庫を1件登録する(段階5でも使う)。"""
+
+    def add(product: Product, based_at: datetime, quantity: int, source: str = "csv") -> InventorySnapshot:
+        row = InventorySnapshot(based_at=based_at, product_id=product.id, quantity=quantity, source=source)
+        db.add(row)
+        db.flush()
+        return row
+
+    return add
+
+
+@pytest.fixture
+def add_pos(db):
+    """POS を登録する。hour=None は日計。"""
+
+    def add(product: Product, day: date, quantity: int, hour: int | None = None) -> None:
+        db.add(PosSale(sales_date=day, sales_hour=hour, product_id=product.id, quantity=quantity))
+        db.flush()
+
+    return add
+
+
+@pytest.fixture
+def proposal_factory(db, product_factory):
+    """提案を1件作る(元になる予測結果も作る)。product を省略すると VEG の商品を作る。"""
+
+    def make(
+        product: Product | None = None,
+        *,
+        product_code: str | None = None,
+        product_offset: int | None = None,
+        target: date = date(2026, 10, 17),
+        time_band: int | None = None,
+        qty: int = 10,
+        status: str = "pending",
+        deadline: datetime = jst(2026, 10, 16, 20),
+        warnings: list[str] | None = None,
+        is_adjusted: bool = False,
+        recalculated_qty: int | None = None,
+        calculated_at: datetime | None = None,
+        basis: dict | None = None,
+        approved_by: int | None = None,
+    ) -> Proposal:
+        if product is None:
+            code = product_code or (f"VEG-P{product_offset:03d}" if product_offset is not None else None)
+            product = product_factory(code=code)
+        calculated_at = calculated_at or jst(2026, 10, 16, 9)
+        f = Forecast(product_id=product.id, target_date=target, time_band=time_band, predicted_qty=float(qty),
+                     model_version="baseline", features={}, weather_fetched_at=calculated_at)
+        db.add(f)
+        db.flush()
+        p = Proposal(
+            department_id=product.department_id, product_id=product.id, target_date=target, time_band=time_band,
+            forecast_id=f.id, proposed_qty=qty, original_qty=qty, recalculated_qty=recalculated_qty,
+            is_adjusted=is_adjusted, status=status, deadline=deadline, warnings=list(warnings or []),
+            calculated_at=calculated_at, approved_by=approved_by,
+            approved_at=calculated_at if status in ("approved", "confirmed") else None,
+            basis=basis if basis is not None else {"model_version": "baseline", "weather_fetched_at": calculated_at.isoformat()},
+        )
+        db.add(p)
+        db.flush()
+        return p
+
+    return make
+
+
+def dept(db: Session, code: str) -> Department:
+    return db.scalar(select(Department).where(Department.code == code))
+
+
+def one(items, product_code: str):
+    """計算結果から商品コードの1件を取り出す。"""
+    found = [c for c in items if c.product_code == product_code]
+    assert len(found) == 1, f"{product_code}: {len(found)}件"
+    return found[0]
+
+
+@pytest.fixture
+def veg_setup(db, product_factory, add_pos, add_inventory, fixed_now) -> Product:
+    """VEG-001(入数6・LT1・持越可)。POS は 10/02〜10/15 の日計が毎日10、10/10(土)だけ20。
+    在庫は 10/16 14:30 に 8。現在は 10/16 15:00(締め 20:00 より前)。"""
+    fixed_now.set(jst(2026, 10, 16, 15))
+    p = product_factory(code="VEG-001", order_unit=6, lead_time_days=1, can_carry_over=True)
+    for i in range(14):
+        d = date(2026, 10, 2) + timedelta(days=i)
+        add_pos(p, d, 20 if d == date(2026, 10, 10) else 10)
+    add_inventory(p, jst(2026, 10, 16, 14, 30), 8)
+    return p
+
+
+@pytest.fixture
+def baseline_services(tmp_path):
+    """モデルなし(ベースライン)・偽の気象クライアント。"""
+    from smdx_api.proposals.compute_fresh import ComputeServices
+    from tests.fake_models import empty_registry
+    from tests.fakes import FakeWeatherClient
+
+    return ComputeServices(empty_registry(tmp_path), FakeWeatherClient())
+
+
+@pytest.fixture
+def model_services(tmp_path):
+    """常に5を返すモデル・偽の気象クライアント。"""
+    from smdx_api.proposals.compute_fresh import ComputeServices
+    from tests.fake_models import const_registry
+    from tests.fakes import FakeWeatherClient
+
+    return ComputeServices(const_registry(tmp_path), FakeWeatherClient())
+
+
+@pytest.fixture
+def job_session_factory(db):
+    """ジョブ(run_job)が使うセッション工場。試験の db と同じ接続・トランザクションの中のセーブポイントで動く。"""
+    conn = db.connection()
+
+    def make() -> Session:
+        return Session(bind=conn, join_transaction_mode="create_savepoint")
+
+    return make
+
+
+@pytest.fixture
+def test_services(app, baseline_services, job_session_factory):
+    """提案のAPIの試験用: 計算はベースライン・偽の気象、ジョブは試験の DB の中で動かす。"""
+    from smdx_api.api.deps import get_compute_services, get_session_factory
+
+    app.dependency_overrides[get_compute_services] = lambda: baseline_services
+    app.dependency_overrides[get_session_factory] = lambda: job_session_factory
+    return baseline_services

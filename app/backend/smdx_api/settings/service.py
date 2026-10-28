@@ -10,6 +10,8 @@ from smdx_api.settings.values import INTERNAL_PREFIX, AppSettings, resolve, vali
 
 # 特売・カレンダーの最終変更日時(削除も含む)。最新性判定で使う(詳細設計書「自動再計算の対象と判定」)
 EVENTS_CHANGED_KEY = f"{INTERNAL_PREFIX}events_changed_at"
+# 計算に関わる設定(再計算の判定時間を除くすべて)の最終変更日時。最新性判定で使う
+SETTINGS_CHANGED_KEY = f"{INTERNAL_PREFIX}settings_changed_at"
 
 
 def _departments(db: Session) -> list[tuple[str, str]]:
@@ -25,8 +27,12 @@ def load_settings(db: Session) -> AppSettings:
     return resolve(_stored(db), _departments(db))
 
 
-def update_settings(db: Session, changes: dict[str, Any], user_id: int) -> AppSettings:
-    """変更を検証して保存する。不正なら SettingsError を送出し、何も保存しない。"""
+def update_settings(db: Session, changes: dict[str, Any], user_id: int, now: datetime) -> AppSettings:
+    """変更を検証して保存する。不正なら SettingsError を送出し、何も保存しない。
+
+    計算に関わる値が実際に変わったら SETTINGS_CHANGED_KEY に日時を記録する(提案を自動で再計算させるため)。
+    """
+    before = load_settings(db)
     departments = _departments(db)
     values = validate_changes(changes, _stored(db), departments)
     existing = {s.key: s for s in db.scalars(select(Setting).where(Setting.key.in_(values)))}
@@ -38,7 +44,15 @@ def update_settings(db: Session, changes: dict[str, Any], user_id: int) -> AppSe
             row.value = value
             row.updated_by = user_id
     db.flush()
-    return load_settings(db)
+    after = load_settings(db)
+    if _calculation_inputs(before) != _calculation_inputs(after):
+        touch_internal(db, SETTINGS_CHANGED_KEY, now)
+    return after
+
+
+def _calculation_inputs(s: AppSettings) -> AppSettings:
+    """提案の計算に使う設定だけを比べるため、再計算の判定時間をそろえる。"""
+    return s.model_copy(update={"weather_stale_hours": 0.0})
 
 
 def touch_internal(db: Session, key: str, at: datetime) -> None:

@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import * as productsApi from "../src/api/products";
@@ -33,7 +33,10 @@ afterEach(() => {
 
 test("lists promotions for default period and offers only own department products", async () => {
   await renderPage(<PromotionsPage />, staff(VEG), "特売・チラシ");
-  expect(promotionsApi.listPromotions).toHaveBeenCalledWith({ date_from: "2026-10-16", date_to: "2026-11-15" });
+  // 一覧の取得は描画の後に始まるため、呼び出しを待ってから確かめる
+  await waitFor(() =>
+    expect(promotionsApi.listPromotions).toHaveBeenCalledWith({ date_from: "2026-10-16", date_to: "2026-11-15" }),
+  );
   const row = (await screen.findByText("チラシ")).closest("tr")!;
   expect(within(row).getByText("10/20〜10/22")).toBeInTheDocument();
   const options = within(screen.getByLabelText("商品")).getAllByRole("option").map((o) => o.textContent);

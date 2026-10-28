@@ -7,11 +7,13 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from smdx_api.api import (
     routes_auth,
+    routes_orders,
     routes_calendar,
     routes_imports,
     routes_inventory,
     routes_products,
     routes_promotions,
+    routes_proposals,
     routes_settings,
 )
 from smdx_api.config import AppConfig, get_config
@@ -66,4 +68,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(routes_products.router)
     app.include_router(routes_calendar.router)
     app.include_router(routes_promotions.router)
+    app.include_router(routes_proposals.router)
+    app.include_router(routes_orders.router)
     return app
