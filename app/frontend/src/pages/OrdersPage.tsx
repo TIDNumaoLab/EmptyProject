@@ -37,15 +37,19 @@ export default function OrdersPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   // 保存していない数量の入力がある提案。ある間は再計算の結果で一覧を差し替えない
   const dirtyIds = useRef<Set<number>>(new Set());
+  // 入力が無くなったときに、差し替えを待っている結果があれば反映する(描画ごとの値を ref で参照する)
+  const pendingApply = useRef<(() => Promise<void>) | null>(null);
   const onDirtyChange = useCallback((id: number, dirty: boolean) => {
     if (dirty) dirtyIds.current.add(id);
     else dirtyIds.current.delete(id);
+    if (dirtyIds.current.size === 0 && pendingApply.current) void pendingApply.current();
   }, []);
 
   const { data, error, job, reload, recalculate, hasUpdate, applyUpdate } = useProposals(
     { departmentCode: department, targetDate: targetDate || undefined, status: status || undefined },
     { holdUpdates: () => dirtyIds.current.size > 0 },
   );
+  pendingApply.current = hasUpdate ? applyUpdate : null;
 
   useEffect(() => {
     getSettings()

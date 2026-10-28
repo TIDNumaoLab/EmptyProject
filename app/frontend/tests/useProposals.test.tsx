@@ -158,3 +158,22 @@ test("held update is not applied until applyUpdate", async () => {
   expect(result.current.hasUpdate).toBe(false);
   expect(result.current.data?.proposals[0].proposed_qty).toBe(30);
 });
+
+test("changing the conditions clears the held update notice", async () => {
+  // 部門などを変えた後の取得が失敗しても、前の条件のお知らせを残さない(PR #7 レビューの指摘5)
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.mocked(proposalsApi.listProposals)
+    .mockResolvedValueOnce(listResponse([proposal()], running(0, 1)))
+    .mockRejectedValueOnce(new Error("通信に失敗"));
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null, notice: null });
+  const { result, rerender } = renderHook(({ code }) => useProposals({ departmentCode: code }, { pollMs: 2000, holdUpdates: () => true }),
+    { initialProps: { code: "VEG" } });
+  await waitFor(() => expect(result.current.job?.status).toBe("running"));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  await waitFor(() => expect(result.current.hasUpdate).toBe(true));
+  rerender({ code: "FISH" });
+  await waitFor(() => expect(result.current.error).not.toBeNull());
+  expect(result.current.hasUpdate).toBe(false);
+});

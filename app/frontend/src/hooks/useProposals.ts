@@ -51,6 +51,8 @@ export function useProposals(params: ProposalParams, opts: { pollMs?: number; ho
   }, [departmentCode, targetDate, status]);
 
   useEffect(() => {
+    // 条件が変わったら、前の条件の「新しい計算結果があります」は消す(取得に失敗しても残さない)
+    setHasUpdate(false);
     void reload();
   }, [reload]);
 

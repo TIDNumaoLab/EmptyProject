@@ -50,7 +50,7 @@ export default function ProposalTable({ proposals, selected, skipped, approveLoc
             onApprove={() => onApprove(p)}
             onCancel={() => onCancel(p)}
             onAdopt={() => onAdopt(p)}
-            onDirtyChange={onDirtyChange ? (dirty) => onDirtyChange(p.id, dirty) : undefined}
+            onDirtyChange={onDirtyChange}
           />
         ))}
       </tbody>

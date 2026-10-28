@@ -187,3 +187,39 @@ test("unsaved input is kept when a recalculation finishes, until the user applie
   await waitFor(() => expect(screen.getByLabelText("キャベツ の提案数")).toHaveValue(30));
   expect(screen.queryByText("新しい計算結果があります。")).not.toBeInTheDocument();
 });
+
+test("applying keeps the input of rows whose quantity did not change", async () => {
+  // 再計算で updated_at だけが変わった行(提案数は同じ)は、反映しても入力を残す(PR #7 レビューの必須1)
+  vi.mocked(proposalsApi.listProposals)
+    .mockResolvedValueOnce(listResponse([proposal({ proposed_qty: 24 })], running(0, 1)))
+    .mockResolvedValueOnce(listResponse([proposal({ proposed_qty: 24, updated_at: "2026-10-16T15:12:00+09:00" })]));
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null, notice: null });
+  await renderPage(<OrdersPage />, staff(VEG), "発注");
+  const input = await screen.findByLabelText("キャベツ の提案数");
+  const user = userEvent.setup();
+  await user.clear(input);
+  await user.type(input, "20");
+  expect(await screen.findByText("新しい計算結果があります。", undefined, { timeout: 4000 })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "反映する" }));
+  await waitFor(() => expect(proposalsApi.listProposals).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByText("新しい計算結果があります。")).not.toBeInTheDocument());
+  expect(screen.getByLabelText("キャベツ の提案数")).toHaveValue(20);
+});
+
+test("held update is applied automatically once no unsaved input remains", async () => {
+  // 入力を元に戻して保存前の入力が無くなったら、お知らせを残さず自動で反映する(PR #7 レビューの指摘5)
+  vi.mocked(proposalsApi.listProposals)
+    .mockResolvedValueOnce(listResponse([proposal({ proposed_qty: 24 })], running(0, 1)))
+    .mockResolvedValueOnce(listResponse([proposal({ proposed_qty: 30, updated_at: "2026-10-16T15:12:00+09:00" })]));
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null, notice: null });
+  await renderPage(<OrdersPage />, staff(VEG), "発注");
+  const input = await screen.findByLabelText("キャベツ の提案数");
+  const user = userEvent.setup();
+  await user.clear(input);
+  await user.type(input, "20");
+  await screen.findByText("新しい計算結果があります。", undefined, { timeout: 4000 });
+  await user.clear(input);
+  await user.type(input, "24");
+  await waitFor(() => expect(screen.getByLabelText("キャベツ の提案数")).toHaveValue(30));
+  expect(screen.queryByText("新しい計算結果があります。")).not.toBeInTheDocument();
+});
