@@ -82,6 +82,19 @@ def test_approve_bulk_skips_warnings_and_non_pending(db, proposal_factory, user,
 
 
 @pytest.mark.db
+def test_approve_bulk_locks_in_id_order(db, proposal_factory, user, fixed_now, monkeypatch):
+    # 2人が重なる提案を逆の順で一括承認しても行き詰まらないよう、ID の小さい順にロックする(PR #6 の軽微な課題)
+    from smdx_api.proposals import actions
+
+    ps = [proposal_factory(product_offset=i) for i in range(3)]
+    locked = []
+    real = actions._lock
+    monkeypatch.setattr(actions, "_lock", lambda db_, pid: locked.append(pid) or real(db_, pid))
+    approve_bulk(db, [(p.id, 10) for p in reversed(ps)], user.id, fixed_now.value)
+    assert locked == sorted(p.id for p in ps)
+
+
+@pytest.mark.db
 def test_approve_rejects_quantity_changed_since_shown(db, proposal_factory, fixed_now, user):
     # 画面を開いた後に裏の再計算で 20 → 24 に変わった
     p = proposal_factory(qty=24)
@@ -112,6 +125,8 @@ def test_cancel_then_adopt(db, proposal_factory, user, fixed_now):
         30, 30, None, False, None, "pending")
     h = last_history(db, p)
     assert (h.action, h.qty_before, h.qty_after, h.reason, h.actor_id) == ("adopt", 24, 30, "inventory", user.id)
+    # 根拠は採用前の計算のものなので、次の判定で再計算させる印を付ける(PR #6 の軽微な課題)
+    assert p.basis["recalc_pending"] is True
 
 
 @pytest.mark.db
@@ -125,7 +140,7 @@ def test_adopt_on_approved_before_deadline_returns_to_pending(db, proposal_facto
 def test_cancel_at_deadline_is_rejected(db, proposal_factory, user):
     p = proposal_factory(status="approved", deadline=jst(2026, 10, 16, 20))
     # 期限ちょうど: 期限経過の更新で確定になり、取り消せない
-    with pytest.raises(StateError):
+    with pytest.raises(StateError, match="期限を過ぎているため取り消せません"):
         cancel_approval(db, p.id, user.id, jst(2026, 10, 16, 20))
     assert p.status == "confirmed"
     q = proposal_factory(status="approved", deadline=jst(2026, 10, 16, 20), product_offset=5)

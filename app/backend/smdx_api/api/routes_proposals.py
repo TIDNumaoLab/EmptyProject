@@ -15,7 +15,7 @@ from smdx_api.api.deps import (
     get_job_launcher,
 )
 from smdx_api.auth.permissions import Principal
-from smdx_api.clock import get_now
+from smdx_api.clock import JST, get_now
 from smdx_api.db.models import Department, Product, Proposal, ProposalJob, User
 from smdx_api.proposals import actions
 from smdx_api.proposals.actions import ProposalNotFound
@@ -58,7 +58,7 @@ def order_department(code: str, p: Principal, db: Session) -> Department:
 def _targets(target_date: date | None, now: datetime) -> FreshTargets:
     if target_date is not None:
         try:
-            check_target_range(target_date, now.date())
+            check_target_range(target_date, now.astimezone(JST).date())
         except TargetOutOfRange as e:
             raise HTTPException(status_code=400, detail=str(e)) from None
     return FreshTargets(target_date)

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from smdx_api.clock import JST
 from smdx_api.db.models import Department, Proposal
 from smdx_api.predictor.predict import BASELINE_VERSION
+from smdx_api.proposals.actions import RECALC_PENDING
 from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets, department_products, fresh_target_dates
 from smdx_api.proposals.inputs import freshness_context
 from smdx_api.proposals.jobs import JobKey, run_job
@@ -57,7 +58,7 @@ def needs_auto_recalc(
             continue
         basis = p.basis or {}
         version = basis.get("loaded_model_version", basis.get("model_version", BASELINE_VERSION))
-        freshness = ProposalFreshness(p.calculated_at, version, _fetched_at(basis))
+        freshness = ProposalFreshness(p.calculated_at, version, _fetched_at(basis), bool(basis.get(RECALC_PENDING)))
         if is_stale(freshness, ctx, now):
             return True
     return False
@@ -66,10 +67,12 @@ def needs_auto_recalc(
 class JobLauncher:
     """ジョブを FastAPI の BackgroundTasks に積む(同じプロセスのスレッドで実行する)。"""
 
-    def __init__(self, session_factory: Callable[[], Session], services: ComputeServices, now_fn: Callable[[], datetime]) -> None:
+    def __init__(self, session_factory: Callable[[], Session], services: ComputeServices, now_fn: Callable[[], datetime],
+                 clock: Callable[[], datetime] | None = None) -> None:
         self.session_factory = session_factory
         self.services = services
         self.now_fn = now_fn
+        self.clock = clock
 
     def launch(self, background_tasks: BackgroundTasks, job_id: int, targets: FreshTargets) -> None:
-        background_tasks.add_task(run_job, job_id, targets, self.session_factory, self.services, self.now_fn)
+        background_tasks.add_task(run_job, job_id, targets, self.session_factory, self.services, self.now_fn, self.clock)

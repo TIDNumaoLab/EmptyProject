@@ -2,6 +2,7 @@
 
 現在時刻は必ずここから取り、試験では get_now を差し替える。
 """
+from collections.abc import Callable
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -15,3 +16,8 @@ def now() -> datetime:
 def get_now() -> datetime:
     """FastAPI の依存関係として使う現在時刻。"""
     return now()
+
+
+def get_clock() -> Callable[[], datetime]:
+    """FastAPI の依存関係として使う時計(要求の後で時刻を取り直す処理用。裏で動くジョブの終了日時など)。"""
+    return now

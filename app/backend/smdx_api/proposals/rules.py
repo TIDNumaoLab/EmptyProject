@@ -37,6 +37,7 @@ def check_adjust(s: ProposalState) -> None:
         raise StateError("この提案は修正できません")
 
 
+EXPIRED_FOR_CANCEL = "期限を過ぎているため取り消せません"
 QTY_CHANGED = "数量が更新されました。一覧を取り直してから承認してください"
 BULK_QTY_CHANGED = "数量が更新されたため一括承認から除外しました"
 
@@ -63,10 +64,13 @@ def bulk_skip_reason(s: ProposalState, current_qty: int, expected_qty: int) -> s
 
 
 def check_cancel(s: ProposalState, now: datetime) -> None:
+    # 期限ちょうど以後は、操作の冒頭の期限経過の更新で確定になっている
+    if s.status == "confirmed":
+        raise StateError(EXPIRED_FOR_CANCEL)
     if s.status != "approved":
         raise StateError("承認済みの提案ではありません")
     if now >= s.deadline:
-        raise StateError("期限を過ぎているため取り消せません")
+        raise StateError(EXPIRED_FOR_CANCEL)
 
 
 def check_adopt(s: ProposalState, now: datetime) -> None:
@@ -109,6 +113,8 @@ class ProposalFreshness:
     calculated_at: datetime
     model_version: str
     weather_fetched_at: datetime | None
+    # 再計算値を採用した(数量と根拠が食い違っている)ため、次の判定で再計算する
+    recalc_pending: bool = False
 
 
 def is_stale(p: ProposalFreshness, ctx: FreshnessContext, now: datetime) -> bool:
@@ -118,6 +124,8 @@ def is_stale(p: ProposalFreshness, ctx: FreshnessContext, now: datetime) -> bool
     (すぐに「古い」とすると、予報が取れない間は画面を開くたびに再計算が続くため)。
     model_version は計算時に読み込んでいたモデルの版(行ごとにベースラインになったかどうかではない)。
     """
+    if p.recalc_pending:
+        return True
     if ctx.data_changed_at is not None and ctx.data_changed_at > p.calculated_at:
         return True
     if ctx.events_changed_at is not None and ctx.events_changed_at > p.calculated_at:

@@ -76,6 +76,20 @@ def test_needs_auto_recalc_on_weather_age_and_model_change(db, veg_setup, baseli
 
 
 @pytest.mark.db
+def test_needs_auto_recalc_after_adopt(db, veg_setup, baseline_services, fixed_now):
+    from sqlalchemy import select
+
+    from smdx_api.db.models import Proposal
+
+    now = fixed_now.value
+    create_all(db, baseline_services, now)
+    p = db.scalars(select(Proposal)).one()
+    p.basis = {**p.basis, "recalc_pending": True}
+    db.flush()
+    assert needs(db, baseline_services, now + timedelta(minutes=1))
+
+
+@pytest.mark.db
 def test_adjusted_or_approved_do_not_trigger(db, veg_setup, baseline_services, fixed_now):
     from sqlalchemy import select
 

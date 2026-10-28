@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from smdx_api.auth.permissions import Principal, can_access_department
 from smdx_api.auth.service import load_principal
-from smdx_api.clock import get_now
+from smdx_api.clock import get_clock, get_now
 from smdx_api.db.models import Department
 from smdx_api.predictor.registry import ModelRegistry
 from smdx_api.proposals.compute_fresh import ComputeServices
@@ -52,9 +52,11 @@ def get_job_launcher(
     session_factory: Callable[[], Session] = Depends(get_session_factory),
     services: ComputeServices = Depends(get_compute_services),
     now: datetime = Depends(get_now),
+    clock: Callable[[], datetime] = Depends(get_clock),
 ) -> JobLauncher:
-    # ジョブの計算時刻は要求を受けた時刻とする(計算日時が実際より前になる側にずれるので、その間の変更は次の判定で拾える)
-    return JobLauncher(session_factory, services, lambda: now)
+    # ジョブの計算時刻は要求を受けた時刻とする(計算日時が実際より前になる側にずれるので、その間の変更は次の判定で拾える)。
+    # 終了日時は実際に終わった時刻を記録する
+    return JobLauncher(session_factory, services, lambda: now, clock)
 
 
 def current_user(request: Request, db: Session = Depends(get_db)) -> Principal:

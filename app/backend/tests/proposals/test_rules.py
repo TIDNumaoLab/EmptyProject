@@ -76,6 +76,9 @@ def test_cancel_until_deadline():
         check_cancel(st("approved"), D)
     with pytest.raises(StateError, match="承認済みの提案ではありません"):
         check_cancel(st(), D - timedelta(minutes=1))
+    # 期限経過の更新で確定になった提案は、期限切れとして知らせる(PR #6 の軽微な課題)
+    with pytest.raises(StateError, match="期限を過ぎているため取り消せません"):
+        check_cancel(st("confirmed"), D)
 
 
 def test_adopt_rules():
@@ -122,6 +125,8 @@ P = ProposalFreshness(CALC, "daily-2026.11.01-1", CALC)
     (P, replace(CTX, data_changed_at=CALC - timedelta(minutes=1)), CALC + timedelta(hours=1), False),
     (P, replace(CTX, events_changed_at=CALC), CALC + timedelta(hours=1), False),        # 同時刻は「後」ではない
     (P, replace(CTX, settings_changed_at=CALC), CALC + timedelta(hours=1), False),
+    # 再計算値を採用した提案は、数量と根拠をそろえるため次の判定で再計算する(PR #6 の軽微な課題)
+    (replace(P, recalc_pending=True), CTX, CALC + timedelta(minutes=1), True),
 ])
 def test_is_stale(p, ctx, now, stale):
     assert is_stale(p, ctx, now) is stale

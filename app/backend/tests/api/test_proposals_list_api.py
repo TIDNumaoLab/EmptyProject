@@ -48,6 +48,17 @@ def test_out_of_range_target_is_400(client, login, user_factory, fixed_now):
 
 
 @pytest.mark.db
+def test_target_range_uses_jst_today(client, login, user_factory, fixed_now):
+    # 現在時刻が UTC で渡されても、当日は日本時間で決める(UTC 10/16 15:30 = 日本時間 10/17 0:30。PR #6 の軽微な課題)
+    from datetime import datetime, timezone
+
+    fixed_now.set(datetime(2026, 10, 16, 15, 30, tzinfo=timezone.utc))
+    login(client, user_factory(departments=("VEG",)))
+    res = client.get("/api/proposals", params={"department_code": "VEG", "target_date": "2026-10-16"})
+    assert res.status_code == 400
+
+
+@pytest.mark.db
 def test_other_department_is_403_and_requires_login(client, login, user_factory, app):
     from fastapi.testclient import TestClient
 
