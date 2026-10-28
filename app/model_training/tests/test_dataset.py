@@ -92,3 +92,19 @@ def test_time_band_day_without_any_pos_is_excluded(sample_dir):
     gap = raw.pos.sales_date.max() - timedelta(days=10)
     t = build_training_table(_drop_day(raw, gap), "time_band", ["DELI"])
     assert gap not in set(t.target_date)
+
+
+def test_blank_weather_values_are_read_as_missing(sample_dir, tmp_path):
+    # 実データの気象で天候コード・気温が空欄でも読み込みで止めず、欠損として扱う(PR #4 本文の軽微な課題)
+    import shutil
+
+    import pandas as pd
+
+    data = tmp_path / "data"
+    shutil.copytree(sample_dir, data)
+    w = pd.read_csv(data / "weather.csv", dtype=str, keep_default_na=False)
+    w.loc[0, ["weather_code", "temperature"]] = ""
+    w.to_csv(data / "weather.csv", index=False)
+    raw = load_folder(data)
+    assert pd.isna(raw.weather.weather_code.iloc[0]) and pd.isna(raw.weather.temperature.iloc[0])
+    assert len(build_training_table(raw, "daily", ["VEG"])) > 0

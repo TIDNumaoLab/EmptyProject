@@ -8,7 +8,8 @@ BANDS = [10, 11, 14, 17]
 
 def test_display_stock_only_next_band():
     assert display_stock_by_band(time(10, 30), 5, BANDS) == {10: 0, 11: 5, 14: 0, 17: 0}
-    assert display_stock_by_band(time(11, 0), 5, BANDS) == {10: 0, 11: 0, 14: 5, 17: 0}   # ちょうどは次の帯
+    # 開始時刻ちょうどの入力は、その時間帯の開始時点の残数とみなす(PR #4 指摘6)
+    assert display_stock_by_band(time(11, 0), 5, BANDS) == {10: 0, 11: 5, 14: 0, 17: 0}
     assert display_stock_by_band(time(9, 0), 5, BANDS) == {10: 5, 11: 0, 14: 0, 17: 0}    # 開店前
     assert display_stock_by_band(time(18, 0), 5, BANDS) == {10: 0, 11: 0, 14: 0, 17: 0}   # 最後の帯の開始以降
     assert display_stock_by_band(None, 5, [10, 11]) == {10: 0, 11: 0}

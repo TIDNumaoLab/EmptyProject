@@ -5,7 +5,7 @@ import time
 import joblib
 
 from smdx_api.predictor.registry import ModelRegistry, ModelStatus
-from tests.predictor.conftest import model_dict
+from predictor_helpers import model_dict
 
 
 def test_missing_file(tmp_path):
@@ -29,6 +29,21 @@ def test_registry_reloads_when_file_changes(tmp_path):
     joblib.dump(model_dict(meta={"version": "daily-2026.11.08-1"}), p)
     later = time.time() + 5
     os.utime(p, (later, later))
+    assert reg.get("daily").version == "daily-2026.11.08-1"
+
+
+def test_registry_reloads_when_file_replaced_keeping_mtime(tmp_path):
+    # 更新日時を保ったままのコピー(cp -p など)でも、大きさ・ファイル番号の変化で差し替えを検知する(PR #4 指摘8)
+    p = tmp_path / "daily.joblib"
+    joblib.dump(model_dict(), p)
+    reg = ModelRegistry({"daily": p, "time_band": tmp_path / "x"})
+    assert reg.get("daily").version == "daily-2026.11.01-1"
+    st = p.stat()
+    new = tmp_path / "daily.joblib.new"
+    joblib.dump(model_dict(meta={"version": "daily-2026.11.08-1", "note": "x" * 100}), new)
+    os.utime(new, ns=(st.st_atime_ns, st.st_mtime_ns))
+    os.replace(new, p)
+    assert p.stat().st_mtime_ns == st.st_mtime_ns
     assert reg.get("daily").version == "daily-2026.11.08-1"
 
 

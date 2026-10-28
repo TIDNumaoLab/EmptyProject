@@ -35,8 +35,10 @@ def make_candidates(granularity: Granularity, seed: int = SEED) -> dict[str, Pip
         ]),
         "lightgbm": Pipeline([
             ("prep", _preprocess(granularity)),
-            # n_jobs=-1 は論理コア数で動かす(省略すると物理コア数を調べ、Windows では長いエラーを表示する)
-            ("model", LGBMRegressor(n_estimators=500, learning_rate=0.05, random_state=seed, verbose=-1, n_jobs=-1)),
+            # n_jobs=-1 は論理コア数で動かす(省略すると物理コア数を調べ、Windows では長いエラーを表示する)。
+            # deterministic・force_row_wise で、スレッド数によって結果が変わらないようにする
+            ("model", LGBMRegressor(n_estimators=500, learning_rate=0.05, random_state=seed, verbose=-1, n_jobs=-1,
+                                    deterministic=True, force_row_wise=True)),
         ]),
     }
 

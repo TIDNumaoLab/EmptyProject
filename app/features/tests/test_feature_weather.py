@@ -56,3 +56,10 @@ def test_no_hours_gives_missing():
 def test_missing_precipitation_values_give_none():
     h = _hourly(D, {12: (1, 20.0, None, None)})
     assert summarize(h, D, 10, 20, "max", precipitation_source="probability") == WeatherSummary(1, 20.0, None)
+
+
+def test_summary_converts_times_to_jst():
+    # UTC の時刻で渡されても、日本時間の日付・時で集約する(PR #4 本文の軽微な課題)
+    h = _hourly(D, {10: (1, 18.0, 10, 0.0), 14: (3, 22.0, 30, 0.0), 19: (61, 16.0, 80, 1.5)})
+    h["time"] = h["time"].map(lambda t: t.astimezone(ZoneInfo("UTC")))
+    assert summarize(h, D, 10, 20, "max") == WeatherSummary(61, 22.0, 1.5)

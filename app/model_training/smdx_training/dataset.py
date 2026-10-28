@@ -64,8 +64,9 @@ def load_folder(folder: Path) -> RawData:
     w = _read(folder / "weather.csv")
     weather = pd.DataFrame({
         "time": pd.to_datetime(w.observed_time, format="%Y-%m-%d %H:%M").dt.tz_localize(TZ),
-        "weather_code": w.weather_code.astype(int),
-        "temperature": w.temperature.astype(float),
+        # 空欄は欠損として読む(その時間は気象の集約から外れる)
+        "weather_code": _num(w.weather_code),
+        "temperature": _num(w.temperature),
         "precipitation_probability": _num(w.precipitation_probability),
         "precipitation": _num(w.precipitation),
     })

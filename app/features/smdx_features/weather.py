@@ -45,10 +45,11 @@ def summarize(
     temperature: Literal["max", "mean"],
     precipitation_source: PrecipitationSource = PRECIPITATION_SOURCE,
 ) -> WeatherSummary:
-    """hourly の列: time(JST aware)、weather_code、temperature、precipitation_probability、precipitation。"""
+    """hourly の列: time(タイムゾーンつき。日本時間に変換して使う)、weather_code、temperature、precipitation_probability、precipitation。"""
     if hourly.empty:
         return WeatherSummary(None, None, None)
-    times = pd.to_datetime(hourly["time"])
+    # 日本時間以外の時刻が渡されても日付・時間帯がずれないよう、日本時間にそろえてから集約する
+    times = pd.to_datetime(hourly["time"], utc=True).dt.tz_convert("Asia/Tokyo")
     mask = (times.dt.date == day) & (times.dt.hour >= start_hour) & (times.dt.hour < end_hour)
     rows = hourly[mask.to_numpy()]
     if rows.empty:

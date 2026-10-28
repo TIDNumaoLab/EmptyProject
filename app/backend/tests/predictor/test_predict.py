@@ -1,9 +1,16 @@
 """予測とベースラインへの切替(詳細設計書「予測モデルのインターフェース定義」)。"""
 import numpy as np
+import pytest
 
-from smdx_api.predictor.predict import BASELINE_VERSION, TIME_BANDS_CHANGED, baseline_values, predict
+from smdx_api.predictor.predict import (
+    BASELINE_VERSION,
+    TIME_BANDS_CHANGED,
+    apply_inference_rules,
+    baseline_values,
+    predict,
+)
 from smdx_features.columns import sample_frame
-from tests.predictor.conftest import ConstModel, SometimesNaNModel, SpyModel, model_dict
+from predictor_helpers import ConstModel, SometimesNaNModel, SpyModel, model_dict
 
 
 def feats(lag, avg, granularity="daily"):
@@ -99,3 +106,19 @@ def test_row_is_baseline_for_whole_batch_fallbacks(registry_with, tmp_path):
     assert b.row_is_baseline == [True, True]
     ok = predict(registry_with(model_dict()), "daily", feats([3.0, 4.0], [3.0, 4.0]), weather_available=True, current_time_bands=None)
     assert ok.row_is_baseline == [False, False]
+
+
+def test_time_band_predict_requires_current_time_bands(registry_with):
+    # 区切りを渡さないと適合確認が飛ばされるため、呼び出しの誤りとする(PR #4 本文の軽微な課題)
+    reg = registry_with(model_dict("time_band"), granularity="time_band")
+    with pytest.raises(ValueError, match="時間帯の区切り"):
+        predict(reg, "time_band", feats([2.0], [2.0], "time_band"), weather_available=True, current_time_bands=None)
+
+
+def test_apply_inference_rules():
+    # 本体の推論と同じ規則: 実績なしの行は0、気象の欠けた行はベースライン、負の値は0(学習の評価でも使う。PR #4 指摘4)
+    f = feats([3.0, np.nan, 4.0, 6.0], [9.0, np.nan, 4.0, 6.0])
+    f.loc[2, "temperature"] = np.nan
+    values, row_is_baseline = apply_inference_rules(f, np.array([7.0, 8.0, 9.0, -1.0]))
+    assert values == [7.0, 0.0, 4.0, 0.0]
+    assert row_is_baseline == [False, False, True, False]

@@ -52,6 +52,36 @@ def test_report_notes_censored_stockout_without_true_demand(sample_dir, tmp_path
     assert "欠品数は過小評価" in text
 
 
+def test_report_states_demand_kind_and_rainy_definition(sample_dir, tmp_path):
+    # 需要の種類、雨天の WAPE の数え方、青果の廃棄が0になる理由をレポートに明記する(PR #4 本文の軽微な課題)
+    assert _run(sample_dir, tmp_path, "time_band") == 0
+    text = next(tmp_path.glob("report-time_band-*.md")).read_text(encoding="utf-8")
+    assert "需要: 真の需要(true_demand.csv)" in text
+    assert "降水を伴う時間帯" in text
+    assert _run(sample_dir, tmp_path / "d") == 0
+    text = next((tmp_path / "d").glob("report-daily-*.md")).read_text(encoding="utf-8")
+    assert "持越可の商品は売れ残りを翌日に持ち越すため、廃棄は0になる" in text
+
+
+def test_model_predictions_follow_inference_rules():
+    # 評価の予測にも本体の推論と同じ規則を当てはめる(PR #4 指摘4)
+    import numpy as np
+
+    from smdx_features.columns import feature_columns, sample_frame
+    from smdx_training.__main__ import model_predictions
+
+    class Const:
+        def predict(self, X):
+            return np.full(len(X), 5.0)
+
+    valid = sample_frame("daily", rows=3)
+    valid["sales_lag_7d"] = [3.0, np.nan, 4.0]
+    valid["sales_avg_7d"] = [3.0, np.nan, 4.0]
+    valid.loc[2, "weather_code"] = np.nan
+    out = model_predictions({"m": Const()}, valid, feature_columns("daily"))
+    assert out["m"].tolist() == [5.0, 0.0, 4.0]
+
+
 def test_main_without_subcommand_returns_2():
     assert main([]) == 2
 

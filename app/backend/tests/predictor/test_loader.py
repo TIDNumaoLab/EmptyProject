@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from smdx_api.predictor.loader import ModelIncompatible, check_model_object, load_model_file
-from tests.predictor.conftest import ConstModel, model_dict
+from predictor_helpers import ConstModel, model_dict
 
 
 class OneRow:
@@ -51,3 +51,18 @@ def test_missing_and_unreadable_files(tmp_path):
     bad.write_bytes(b"not joblib")
     with pytest.raises(ModelIncompatible, match="モデルファイルを読み込めません"):
         load_model_file(bad, "daily")
+
+
+class RejectsNaNModel(ConstModel):
+    """欠損のある行を受け付けない推論器(前処理で欠損を埋めていないモデルの代わり)。"""
+
+    def predict(self, X):
+        if X.isna().any().any():
+            raise ValueError("NaN")
+        return super().predict(X)
+
+
+def test_check_model_rejects_model_that_cannot_handle_missing_values():
+    # 運用では降水量・前週同曜日・7日平均が欠けた行もモデルに渡るため、試験入力にも欠損のある行を含める(PR #4 本文の軽微な課題)
+    with pytest.raises(ModelIncompatible, match="試験入力での推論に失敗しました"):
+        check_model_object(model_dict(model=RejectsNaNModel(5.0)), "daily")

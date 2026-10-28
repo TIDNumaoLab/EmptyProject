@@ -1,4 +1,6 @@
-"""読み込んだモデルの保持。ファイルの更新日時が変わったら次の利用時に読み直して適合確認する(詳細設計書「適合テスト」)。"""
+"""読み込んだモデルの保持。ファイルの更新日時・大きさ・ファイル番号のいずれかが変わったら、次の利用時に読み直して
+適合確認する(詳細設計書「適合テスト」)。更新日時を保ったままのコピーでも差し替えを検知できるよう、3つを比べる。
+"""
 import logging
 import threading
 from collections.abc import Mapping
@@ -8,6 +10,9 @@ from pathlib import Path
 from smdx_api.predictor.loader import Granularity, LoadedModel, ModelIncompatible, load_model_file
 
 log = logging.getLogger(__name__)
+
+# (更新日時 ns, 大きさ, ファイル番号。Windows ではファイル ID)
+FileStamp = tuple[int, int, int]
 
 
 @dataclass(frozen=True)
@@ -20,19 +25,20 @@ class ModelStatus:
 class ModelRegistry:
     def __init__(self, paths: Mapping[Granularity, Path]) -> None:
         self._paths = {g: Path(p) for g, p in paths.items()}
-        # granularity → (読み込んだときの更新日時。ファイルが無ければ None, モデル, 理由)
-        self._state: dict[str, tuple[float | None, LoadedModel | None, str | None]] = {}
+        # granularity → (読み込んだときのファイルの識別。ファイルが無ければ None, モデル, 理由)
+        self._state: dict[str, tuple[FileStamp | None, LoadedModel | None, str | None]] = {}
         self._lock = threading.Lock()
 
     def _refresh(self, granularity: Granularity) -> tuple[LoadedModel | None, str | None]:
         path = self._paths[granularity]
         try:
-            mtime: float | None = path.stat().st_mtime
+            st = path.stat()
+            stamp: FileStamp | None = (st.st_mtime_ns, st.st_size, st.st_ino)
         except OSError:
-            mtime = None
+            stamp = None
         with self._lock:
             cached = self._state.get(granularity)
-            if cached is not None and cached[0] == mtime:
+            if cached is not None and cached[0] == stamp:
                 return cached[1], cached[2]
             try:
                 model, reason = load_model_file(path, granularity), None
@@ -40,7 +46,7 @@ class ModelRegistry:
             except ModelIncompatible as e:
                 model, reason = None, e.reason
                 log.warning("モデルを使えないためベースラインで予測します: %s %s(%s)", granularity, path, e.reason)
-            self._state[granularity] = (mtime, model, reason)
+            self._state[granularity] = (stamp, model, reason)
             return model, reason
 
     def get(self, granularity: Granularity) -> LoadedModel | None:
