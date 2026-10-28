@@ -57,6 +57,18 @@ def test_display_stock_updates_pending_band(client, login, user_factory, deli_se
 
 
 @pytest.mark.db
+def test_display_stock_entered_after_now_is_saved_as_now(client, login, user_factory, deli_setup, test_services,
+                                                         fixed_now, db):
+    """画面の端末の時計が進んでいても、入力時刻はサーバーの現在時刻までにそろえ、保存直後の再計算に効かせる。"""
+    login(client, user_factory(departments=("DELI",)))
+    deli_rows(client)
+    fixed_now.set(jst(2026, 10, 16, 12, 0))
+    assert client.put(URL, json=body(entered_at="2026-10-16T12:02:00+09:00")).status_code == 200
+    assert [e.entered_at for e in db.scalars(select(DisplayStockEntry))] == [jst(2026, 10, 16, 12, 0)]
+    assert deli_rows(client)[14]["proposed_qty"] == 1
+
+
+@pytest.mark.db
 def test_display_stock_for_fresh_department_is_400(client, login, user_factory, veg_setup, test_services, db):
     login(client, user_factory(departments=("VEG",)))
     res = client.put(URL, json=body(department="VEG", items=[]))

@@ -68,6 +68,16 @@ test("production table shows band and production start columns", async () => {
   expect(productsApi.listProducts).toHaveBeenCalledWith("DELI");
 });
 
+test("shows which day the plan is for", async () => {
+  // 9:00 以後の既定表示は翌日の計画。製造開始の列は時刻だけなので、どの日の計画かを画面上部に出す
+  vi.setSystemTime(new Date("2026-10-16T10:00:00+09:00"));
+  vi.mocked(proposalsApi.listProposals).mockResolvedValue(
+    listResponse([deli({ target_date: "2026-10-17", time_band: 10, deadline: "2026-10-17T09:00:00+09:00" })]),
+  );
+  await renderPage(<ProductionPage />, staff(DELI), "製造計画");
+  expect(await screen.findByText("10/17 の製造計画")).toBeInTheDocument();
+});
+
 test("shows notice from list response", async () => {
   vi.mocked(proposalsApi.listProposals).mockResolvedValue(
     listResponse([deli()], null, { notice: "時間帯の設定が変わったため再学習が必要です" }),

@@ -21,7 +21,7 @@ import ErrorBanner from "../components/ErrorBanner";
 import FreshnessBar from "../components/FreshnessBar";
 import ProposalTable from "../components/ProposalTable";
 import proposalStyles from "../components/Proposals.module.css";
-import { confirmMessage, STATUS_LABELS } from "../format";
+import { confirmMessage, formatMonthDay, STATUS_LABELS } from "../format";
 import { useProposals } from "../hooks/useProposals";
 import styles from "../styles/page.module.css";
 import type { Job, Product, Proposal, ProposalStatus, Settings } from "../types/api";
@@ -136,12 +136,16 @@ export default function ProposalPage({ mode }: { mode: ProposalMode }) {
 
   const recalculating = job?.status === "running";
   const cutoff = production ? undefined : settings?.[`order_cutoff.${department}`];
+  // 製造計画の対象日(一覧は1つの対象日の時間帯だけを返す)
+  const planDate = targetDate || data?.proposals[0]?.target_date;
 
   return (
     <section>
       <h1>{production ? "製造計画" : "発注"}</h1>
       <ErrorBanner message={actionError ?? error} />
       {typeof cutoff === "string" && <p className={proposalStyles.cutoff}>発注締め {cutoff} まで</p>}
+      {/* 製造開始の列は時刻だけなので、どの日の計画かを出す(9:00 以後の既定表示は翌日) */}
+      {production && planDate && <p className={proposalStyles.cutoff}>{formatMonthDay(planDate)} の製造計画</p>}
       <div className={styles.toolbar}>
         <DepartmentSelect value={department} onChange={setDepartment} businessType={mode} />
         <label className={styles.field}>
