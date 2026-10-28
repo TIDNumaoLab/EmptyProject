@@ -158,3 +158,10 @@ def test_pos_daily_and_hourly_rows_of_same_day_are_errors():
     assert r.rows == [PosRow(date(2026, 10, 16), None, 1, 3)]
     reason = "同じ日・商品に日計の行と時刻つきの行が混在しています"
     assert r.errors == [RowError(2, reason), RowError(3, reason), RowError(5, reason)]
+
+
+def test_unclosed_quote_rejects_file():
+    # 閉じていない引用符があると残りの行が1つの値になり、黙って消えるため、取込全体を拒否する(PR #7 レビューの指摘2)
+    data = (PROD_HEADER + 'VEG-001,"キャベツ,VEG,6,1,1,,\nVEG-002,トマト,VEG,1,1,1,,\n').encode()
+    with pytest.raises(FileFormatError, match="引用符が閉じていません"):
+        parse_csv("products", data, PRODUCT_CTX)

@@ -33,6 +33,17 @@ def representative_code(codes: Sequence[int]) -> int | None:
     return max(counts, key=lambda c: (counts[c], c))
 
 
+def jst_times(values: pd.Series) -> pd.Series:
+    """時刻を日本時間にそろえる(日本時間以外の時刻が渡されても日付・時間帯がずれないように)。
+
+    タイムゾーンの無い時刻は、日本時間か UTC か決められないため ValueError にする。
+    """
+    times = pd.to_datetime(values, utc=False)
+    if times.dt.tz is None:
+        raise ValueError("気象の時刻にはタイムゾーンを付けてください")
+    return times.dt.tz_convert("Asia/Tokyo")
+
+
 def _none_if_nan(v) -> float | None:
     return None if v is None or pd.isna(v) else float(v)
 
@@ -48,8 +59,7 @@ def summarize(
     """hourly の列: time(タイムゾーンつき。日本時間に変換して使う)、weather_code、temperature、precipitation_probability、precipitation。"""
     if hourly.empty:
         return WeatherSummary(None, None, None)
-    # 日本時間以外の時刻が渡されても日付・時間帯がずれないよう、日本時間にそろえてから集約する
-    times = pd.to_datetime(hourly["time"], utc=True).dt.tz_convert("Asia/Tokyo")
+    times = jst_times(hourly["time"])
     mask = (times.dt.date == day) & (times.dt.hour >= start_hour) & (times.dt.hour < end_hour)
     rows = hourly[mask.to_numpy()]
     if rows.empty:

@@ -22,7 +22,7 @@ import pandas as pd
 from smdx_features.calendar import calendar_flags
 from smdx_features.columns import PRECIPITATION_SOURCE, PrecipitationSource, coerce_types, feature_columns
 from smdx_features.sales import SalesSeries, base_date, sales_avg_7d, sales_lag_7d
-from smdx_features.weather import WeatherSummary, summarize
+from smdx_features.weather import WeatherSummary, jst_times, summarize
 
 EXTRA_COLUMNS = ["target_date", "holiday_name"]
 
@@ -65,7 +65,8 @@ class _Weather:
         self._source = source
         self._by_day: dict[date, pd.DataFrame] = {}
         if weather is not None and not weather.empty:
-            times = pd.to_datetime(weather["time"])
+            # 日本時間の日付で分ける(summarize と同じく、日本時間にそろえてから)
+            times = jst_times(weather["time"])
             for d, g in weather.groupby(times.dt.date.to_numpy()):
                 self._by_day[d] = g
         self._cache: dict[tuple, WeatherSummary] = {}
