@@ -1,4 +1,4 @@
-// 提案の表(1行1商品)。空なら空状態の文言を出す(再計算中は計算中の文言)
+// 提案の表(生鮮は1行1商品、惣菜は1行1商品×時間帯)。空なら空状態の文言を出す(再計算中は計算中の文言)
 import pageStyles from "../styles/page.module.css";
 import type { AdjustReason, Proposal } from "../types/api";
 import ProposalRow from "./ProposalRow";
@@ -16,11 +16,14 @@ interface Props {
   onCancel(p: Proposal): void;
   onAdopt(p: Proposal): void;
   onDirtyChange?(id: number, dirty: boolean): void;
+  // 惣菜の製造計画として表示する場合の、時間帯の表示(時間帯の開始時 → 例: 11:00〜14:00)
+  bandLabel?(band: number): string;
 }
 
-const HEADERS = ["選択", "納品日", "商品", "提案数", "予測値", "天候", "祝日・特売", "前週同曜日", "在庫・発注残・持越見込", "状態", "警告", "差分", "操作"];
+const ORDER_HEADERS = ["選択", "納品日", "商品", "提案数", "予測値", "天候", "祝日・特売", "前週同曜日", "在庫・発注残・持越見込", "状態", "警告", "差分", "操作"];
+const PRODUCTION_HEADERS = ["選択", "時間帯", "製造開始", "商品", "提案数", "予測値", "天候", "祝日・特売", "前週同曜日", "陳列残数", "状態", "警告", "差分", "操作"];
 
-export default function ProposalTable({ proposals, selected, skipped, approveLocked, computing = false, onSelect, onSave, onApprove, onCancel, onAdopt, onDirtyChange }: Props) {
+export default function ProposalTable({ proposals, selected, skipped, approveLocked, computing = false, onSelect, onSave, onApprove, onCancel, onAdopt, onDirtyChange, bandLabel }: Props) {
   if (proposals.length === 0) {
     return (
       <p className={pageStyles.muted}>
@@ -32,7 +35,7 @@ export default function ProposalTable({ proposals, selected, skipped, approveLoc
     <table className={pageStyles.table}>
       <thead>
         <tr>
-          {HEADERS.map((h) => (
+          {(bandLabel ? PRODUCTION_HEADERS : ORDER_HEADERS).map((h) => (
             <th key={h}>{h}</th>
           ))}
         </tr>
@@ -51,6 +54,7 @@ export default function ProposalTable({ proposals, selected, skipped, approveLoc
             onCancel={() => onCancel(p)}
             onAdopt={() => onAdopt(p)}
             onDirtyChange={onDirtyChange}
+            bandLabel={bandLabel && p.time_band !== null ? bandLabel(p.time_band) : undefined}
           />
         ))}
       </tbody>

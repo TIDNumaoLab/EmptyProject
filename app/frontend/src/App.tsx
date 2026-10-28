@@ -11,6 +11,7 @@ import CalendarPage from "./pages/CalendarPage";
 import ImportsPage from "./pages/ImportsPage";
 import InventoryPage from "./pages/InventoryPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import ProductionPage from "./pages/ProductionPage";
 import PromotionsPage from "./pages/PromotionsPage";
 import SettingsPage from "./pages/SettingsPage";
 
@@ -18,6 +19,7 @@ import SettingsPage from "./pages/SettingsPage";
 const PAGES: Record<string, () => JSX.Element> = {
   "/orders": OrdersPage,
   "/orders/approved": ApprovedOrdersPage,
+  "/production": ProductionPage,
   "/settings": SettingsPage,
   "/imports": ImportsPage,
   "/inventory": InventoryPage,

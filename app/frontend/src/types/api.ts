@@ -45,6 +45,14 @@ export interface InventoryInput {
   items: { product_code: string; quantity: number }[];
 }
 
+// 惣菜の陳列残数の入力(PUT /api/production/display-stock)
+export interface DisplayStockInput {
+  department_code: string;
+  target_date: string;
+  entered_at: string;
+  items: { product_code: string; quantity: number }[];
+}
+
 export interface Product {
   product_code: string;
   name: string;

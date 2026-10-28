@@ -108,5 +108,11 @@ export function useProposals(params: ProposalParams, opts: { pollMs?: number; ho
     }
   }, [departmentCode, targetDate]);
 
-  return { data, error, setError, loading, job, reload, recalculate, hasUpdate, applyUpdate: reload };
+  // 一覧の外で始まったジョブ(陳列残数の保存など)の進捗を確認する
+  const trackJob = useCallback((next: Job) => {
+    setJob(next);
+    setError(null);
+  }, []);
+
+  return { data, error, setError, loading, job, reload, recalculate, hasUpdate, applyUpdate: reload, trackJob };
 }

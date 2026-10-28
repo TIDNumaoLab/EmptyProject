@@ -1,6 +1,6 @@
-// 提案の表の1行(1商品)。未承認は提案数を入力でき、数量を変えたら修正理由を選んで保存する
+// 提案の表の1行(生鮮は1商品、惣菜は商品×時間帯)。未承認は提案数を入力でき、数量を変えたら修正理由を選んで保存する
 import { useEffect, useState } from "react";
-import { formatMonthDay, STATUS_LABELS } from "../format";
+import { formatMonthDay, formatTime, STATUS_LABELS } from "../format";
 import pageStyles from "../styles/page.module.css";
 import type { AdjustReason, Proposal } from "../types/api";
 import AdjustReasonSelect from "./AdjustReasonSelect";
@@ -22,6 +22,8 @@ interface Props {
   onAdopt(): void;
   // 保存していない数量の入力があるかが変わったとき(id は提案の ID)
   onDirtyChange?(id: number, dirty: boolean): void;
+  // 惣菜の時間帯の表示(例: 11:00〜14:00)。あれば製造計画の行として、納品日と在庫の列の代わりに時間帯・製造開始・陳列残数を出す
+  bandLabel?: string;
 }
 
 function num(v: number | null, digits?: number): string {
@@ -37,7 +39,7 @@ function weatherText(p: Proposal): string {
   return parts.join(" ");
 }
 
-export default function ProposalRow({ proposal: p, selected, skippedReason, approveLocked = false, onSelect, onSave, onApprove, onCancel, onAdopt, onDirtyChange }: Props) {
+export default function ProposalRow({ proposal: p, selected, skippedReason, approveLocked = false, onSelect, onSave, onApprove, onCancel, onAdopt, onDirtyChange, bandLabel }: Props) {
   const [qty, setQty] = useState(String(p.proposed_qty));
   const [reason, setReason] = useState<AdjustReason | "">("");
   const [note, setNote] = useState("");
@@ -58,7 +60,9 @@ export default function ProposalRow({ proposal: p, selected, skippedReason, appr
   // 行が消えたら入力も無くなる
   useEffect(() => () => onDirtyChange?.(p.id, false), [p.id, onDirtyChange]);
   const valid = /^\d+$/.test(qty.trim());
-  const name = p.product_name;
+  // 惣菜は同じ商品が時間帯ごとに並ぶので、入力欄の名前に時間帯を含める
+  const production = bandLabel !== undefined;
+  const name = production ? `${p.product_name} ${bandLabel}` : p.product_name;
 
   return (
     <tr className={p.warnings.length > 0 ? styles.warned : undefined}>
@@ -71,9 +75,16 @@ export default function ProposalRow({ proposal: p, selected, skippedReason, appr
           onChange={(e) => onSelect(e.target.checked)}
         />
       </td>
-      <td>{formatMonthDay(p.target_date)}</td>
+      {production ? (
+        <>
+          <td>{bandLabel}</td>
+          <td>{formatTime(p.deadline)}</td>
+        </>
+      ) : (
+        <td>{formatMonthDay(p.target_date)}</td>
+      )}
       <td>
-        {name}
+        {p.product_name}
         <div className={pageStyles.muted}>入数 {p.order_unit}</div>
       </td>
       <td>
@@ -112,7 +123,11 @@ export default function ProposalRow({ proposal: p, selected, skippedReason, appr
         {p.is_promotion && <span className={styles.badge}>特売</span>}
       </td>
       <td className={pageStyles.num}>{num(p.sales_lag_7d)}</td>
-      <td>{`在庫 ${num(p.inventory_qty)} / 発注残 ${num(p.backlog_qty)} / 持越 ${num(p.carry_over_qty)}`}</td>
+      {production ? (
+        <td className={pageStyles.num}>{num(p.display_stock_qty)}</td>
+      ) : (
+        <td>{`在庫 ${num(p.inventory_qty)} / 発注残 ${num(p.backlog_qty)} / 持越 ${num(p.carry_over_qty)}`}</td>
+      )}
       <td>
         {STATUS_LABELS[p.status]}
         {p.approved_by_name && <div className={pageStyles.muted}>{p.approved_by_name}</div>}
