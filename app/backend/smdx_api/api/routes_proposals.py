@@ -52,7 +52,7 @@ from smdx_api.settings.service import load_settings
 
 router = APIRouter(prefix="/api/proposals")
 
-def _targets(target_date: date | None, now: datetime) -> FreshTargets:
+def parse_targets(target_date: date | None, now: datetime) -> FreshTargets:
     if target_date is not None:
         try:
             check_target_range(target_date, now.astimezone(JST).date())
@@ -101,7 +101,7 @@ def _freshness(proposals: Sequence[Proposal]) -> FreshnessOut:
     )
 
 
-def _job_out(job: ProposalJob) -> JobOut:
+def job_out(job: ProposalJob) -> JobOut:
     return JobOut(id=job.id, status=job.status, processed=job.processed, total=job.total, error=job.error,
                   notice=job.notice)
 
@@ -158,7 +158,7 @@ def list_proposals(
 ) -> ProposalListOut:
     """既存の提案をすぐに返し、再計算が必要ならジョブを開始して併せて返す(詳細設計書「きっかけ」)。"""
     department = department_for(department_code, p, db)
-    targets = _targets(target_date, now)
+    targets = parse_targets(target_date, now)
     apply_deadlines(db, now, department.id)
     db.commit()
     settings = load_settings(db)
@@ -173,7 +173,7 @@ def list_proposals(
         job = _running_job(db, department, key, now)
     shown = _shown(db, department, now, settings, targets, status)
     return ProposalListOut(proposals=proposals_out(db, shown), freshness=_freshness(shown),
-                           job=_job_out(job) if job else None, notice=_last_notice(db, department, key))
+                           job=job_out(job) if job else None, notice=_last_notice(db, department, key))
 
 
 @router.post("/recalculate", response_model=JobResponse)
@@ -187,13 +187,13 @@ def recalculate(
 ) -> JobResponse:
     """手動再計算。判定を省略して開始する(実行中があればそれを返す)。"""
     department = department_for(body.department_code, p, db)
-    targets = _targets(body.target_date, now)
+    targets = parse_targets(body.target_date, now)
     settings = load_settings(db)
     total = len(wanted(db, department, now, settings, targets))
     job, created = start_or_get_job(db, department, job_key(department, now, settings, targets), now, total)
     if created:
         launcher.launch(background_tasks, job.id, resolved_targets(department, now, settings, targets))
-    return JobResponse(job=_job_out(job))
+    return JobResponse(job=job_out(job))
 
 
 @router.get("/jobs/{job_id}", response_model=JobOut)
@@ -207,7 +207,7 @@ def get_job(job_id: int, p: Principal = Depends(current_user), db: Session = Dep
     if job.status == "running" and job.started_at < now - JOB_TIMEOUT:
         job.status, job.error, job.finished_at = "failed", TIMED_OUT, now
         db.commit()
-    return _job_out(job)
+    return job_out(job)
 
 
 def _check_access(db: Session, proposal_id: int, p: Principal) -> None:
