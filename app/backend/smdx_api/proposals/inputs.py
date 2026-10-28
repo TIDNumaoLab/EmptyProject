@@ -48,15 +48,24 @@ def latest_inventory_today(db: Session, product_ids: Sequence[int], now: datetim
     return {pid: (qty, based_at.astimezone(JST)) for pid, qty, based_at in rows}
 
 
-def backlog_qty(db: Session, product_id: int, inventory_based_at: datetime, target: date, delivery_time: time) -> int:
-    """発注残: 確定した提案のうち、納品日時が在庫基準日時より後で、納品日が対象の納品日より前のものの数量の合計。"""
+def confirmed_orders(db: Session, product_ids: Sequence[int], since: date, until: date) -> dict[int, list[tuple[date, int]]]:
+    """商品ごとの、納品日が since〜until(until を含まない)の確定した提案(納品日, 数量)。発注残の集計に使う。"""
     rows = db.execute(
-        select(Proposal.target_date, Proposal.proposed_qty).where(
-            Proposal.product_id == product_id, Proposal.status == "confirmed", Proposal.target_date < target,
-            Proposal.target_date >= inventory_based_at.astimezone(JST).date(),
+        select(Proposal.product_id, Proposal.target_date, Proposal.proposed_qty).where(
+            Proposal.product_id.in_(product_ids), Proposal.status == "confirmed", Proposal.target_date < until,
+            Proposal.target_date >= since,
         )
     )
-    return sum(qty for d, qty in rows if datetime.combine(d, delivery_time, JST) > inventory_based_at)
+    out: dict[int, list[tuple[date, int]]] = {}
+    for pid, d, qty in rows:
+        out.setdefault(pid, []).append((d, qty))
+    return out
+
+
+def backlog_qty(orders: Sequence[tuple[date, int]], inventory_based_at: datetime, target: date, delivery_time: time) -> int:
+    """発注残: 確定した提案のうち、納品日時が在庫基準日時より後で、納品日が対象の納品日より前のものの数量の合計。"""
+    return sum(qty for d, qty in orders
+               if d < target and datetime.combine(d, delivery_time, JST) > inventory_based_at)
 
 
 def daily_sales_frame(db: Session, product_ids: Sequence[int], since: date) -> pd.DataFrame:
@@ -70,14 +79,17 @@ def daily_sales_frame(db: Session, product_ids: Sequence[int], since: date) -> p
     return pd.DataFrame([tuple(r) for r in rows], columns=DAILY_COLUMNS)
 
 
-def hourly_sales_rows(db: Session, product_id: int, since: date) -> list[tuple[date, int, float]]:
-    """時刻つきの POS(販売日, 時, 数量)。売上構成比に使う。"""
+def hourly_sales_rows(db: Session, product_ids: Sequence[int], since: date) -> dict[int, list[tuple[date, int, float]]]:
+    """商品ごとの時刻つきの POS(販売日, 時, 数量)。売上構成比に使う。"""
     rows = db.execute(
-        select(PosSale.sales_date, PosSale.sales_hour, PosSale.quantity)
-        .where(PosSale.product_id == product_id, PosSale.sales_date >= since, PosSale.sales_hour.is_not(None))
-        .order_by(PosSale.sales_date, PosSale.sales_hour)
+        select(PosSale.product_id, PosSale.sales_date, PosSale.sales_hour, PosSale.quantity)
+        .where(PosSale.product_id.in_(product_ids), PosSale.sales_date >= since, PosSale.sales_hour.is_not(None))
+        .order_by(PosSale.product_id, PosSale.sales_date, PosSale.sales_hour)
     )
-    return [(d, int(h), float(q)) for d, h, q in rows]
+    out: dict[int, list[tuple[date, int, float]]] = {}
+    for pid, d, h, q in rows:
+        out.setdefault(pid, []).append((d, int(h), float(q)))
+    return out
 
 
 def hourly_sales_frame(db: Session, product_ids: Sequence[int], since: date) -> pd.DataFrame:

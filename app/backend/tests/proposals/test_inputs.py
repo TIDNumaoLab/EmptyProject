@@ -16,6 +16,7 @@ from smdx_api.db.models import (
 from smdx_api.proposals.inputs import (
     backlog_qty,
     calendar_data,
+    confirmed_orders,
     daily_sales_frame,
     freshness_context,
     hourly_sales_frame,
@@ -66,7 +67,9 @@ def test_backlog_counts_confirmed_before_target_after_inventory(db, product_fact
     other = product_factory(code="VEG-002")
     proposal_factory(other, target=date(2026, 10, 17), qty=7, status="confirmed")  # 別商品
     proposal_factory(p, target=date(2026, 10, 15), qty=3, status="approved")     # 確定でない
-    assert backlog_qty(db, p.id, jst(2026, 10, 16, 19, 30), date(2026, 10, 18), time(10)) == 12
+    orders = confirmed_orders(db, [p.id], date(2026, 10, 16), date(2026, 10, 18))
+    assert backlog_qty(orders[p.id], jst(2026, 10, 16, 19, 30), date(2026, 10, 18), time(10)) == 12
+    assert set(orders) == {p.id}   # 別商品・対象日以降・確定でないものは読まない
 
 
 @pytest.mark.db
@@ -74,7 +77,8 @@ def test_backlog_delivery_same_day_after_inventory(db, product_factory, proposal
     # 在庫基準が当日の開店前(8:00)なら、当日 10:00 納品の確定分は発注残に入る
     p = product_factory()
     proposal_factory(p, target=date(2026, 10, 16), qty=6, status="confirmed")
-    assert backlog_qty(db, p.id, jst(2026, 10, 16, 8), date(2026, 10, 17), time(10)) == 6
+    orders = confirmed_orders(db, [p.id], date(2026, 10, 16), date(2026, 10, 17))
+    assert backlog_qty(orders[p.id], jst(2026, 10, 16, 8), date(2026, 10, 17), time(10)) == 6
 
 
 @pytest.mark.db
@@ -128,7 +132,8 @@ def test_daily_sales_frame_sums_hourly_and_daily(db, product_factory, add_pos):
     assert list(df.columns) == ["product_code", "sales_date", "quantity"]
     assert sorted(zip(df.product_code, df.sales_date, df.quantity)) == [
         ("VEG-001", date(2026, 10, 14), 5), ("VEG-001", date(2026, 10, 15), 5)]
-    assert hourly_sales_rows(db, p.id, date(2026, 10, 1)) == [(date(2026, 10, 15), 10, 2.0), (date(2026, 10, 15), 11, 3.0)]
+    assert hourly_sales_rows(db, [p.id], date(2026, 10, 1)) == {
+        p.id: [(date(2026, 10, 15), 10, 2.0), (date(2026, 10, 15), 11, 3.0)]}
     hf = hourly_sales_frame(db, [p.id], date(2026, 10, 1))
     assert list(hf.columns) == ["product_code", "sales_date", "sales_hour", "quantity"] and len(hf) == 2
 

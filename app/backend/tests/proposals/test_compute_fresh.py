@@ -191,3 +191,25 @@ def test_fresh_target_dates(db, veg_setup, product_factory, fixed_now):
         veg_setup.id: date(2026, 10, 17), p2.id: date(2026, 10, 19)}
     # 対象日を指定: 最も早い納品日がその日以前の商品だけ
     assert fresh_target_dates(products, fixed_now.value, s, FreshTargets(date(2026, 10, 18))) == {veg_setup.id: date(2026, 10, 18)}
+
+
+@pytest.mark.db
+def test_query_count_does_not_grow_with_products(db, veg_setup, fixed_now, baseline_services, product_factory):
+    # 商品ごとに問い合わせをしない(PR #6 の軽微な課題)。商品が増えても SQL の数は変わらない
+    from sqlalchemy import event
+
+    def count_queries() -> int:
+        statements = []
+        conn = db.connection()
+        listener = lambda *args: statements.append(args[2])  # noqa: E731
+        event.listen(conn, "before_cursor_execute", listener)
+        try:
+            run(db, fixed_now.value, baseline_services)
+        finally:
+            event.remove(conn, "before_cursor_execute", listener)
+        return len(statements)
+
+    one_product = count_queries()
+    product_factory(code="VEG-002")
+    product_factory(code="VEG-003")
+    assert count_queries() == one_product
