@@ -6,7 +6,8 @@ import pytest
 from smdx_api.db.models import ImportLog, InventorySnapshot
 from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets, compute_fresh
 from smdx_api.proposals.persist import apply_computed
-from smdx_api.proposals.service import job_target_date, needs_auto_recalc
+from smdx_api.proposals.jobs import JobKey
+from smdx_api.proposals.service import job_key, needs_auto_recalc
 from smdx_api.settings.service import EVENTS_CHANGED_KEY, load_settings, touch_internal
 from tests.conftest import dept, jst
 from tests.fake_models import const_registry
@@ -23,12 +24,13 @@ def needs(db, services, now, targets=FreshTargets(None)):
 
 
 @pytest.mark.db
-def test_job_target_date(db, fixed_now):
+def test_job_key(db, fixed_now):
     s, veg = load_settings(db), dept(db, "VEG")
-    assert job_target_date(veg, jst(2026, 10, 16, 19, 59), s, FreshTargets(None)) == date(2026, 10, 16)
+    assert job_key(veg, jst(2026, 10, 16, 19, 59), s, FreshTargets(None)) == JobKey("default", date(2026, 10, 16))
     # 締め時刻以後の最も早い納品日に向けた発注日は翌日
-    assert job_target_date(veg, jst(2026, 10, 16, 20), s, FreshTargets(None)) == date(2026, 10, 17)
-    assert job_target_date(veg, jst(2026, 10, 16, 10), s, FreshTargets(date(2026, 10, 20))) == date(2026, 10, 20)
+    assert job_key(veg, jst(2026, 10, 16, 20), s, FreshTargets(None)) == JobKey("default", date(2026, 10, 17))
+    # 対象日の指定は納品日。既定表示の発注日と同じ日付でも別の種別
+    assert job_key(veg, jst(2026, 10, 16, 10), s, FreshTargets(date(2026, 10, 17))) == JobKey("date", date(2026, 10, 17))
 
 
 @pytest.mark.db

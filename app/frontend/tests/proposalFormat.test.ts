@@ -15,7 +15,7 @@ test("formatFreshness", () => {
 });
 
 test("formatRunning", () => {
-  expect(formatRunning({ id: 1, status: "running", processed: 3, total: 6, error: null })).toBe(
+  expect(formatRunning({ id: 1, status: "running", processed: 3, total: 6, error: null, notice: null })).toBe(
     "最新の予測を計算中… (3/6)",
   );
 });

@@ -15,7 +15,7 @@ test("useProposals polls running job then reloads", async () => {
   vi.mocked(proposalsApi.listProposals)
     .mockResolvedValueOnce(listResponse([], running(0, 1)))
     .mockResolvedValueOnce(listResponse([proposal()]));
-  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null });
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null, notice: null });
 
   const { result } = renderHook(() => useProposals({ departmentCode: "VEG" }, { pollMs: 2000 }));
   await waitFor(() => expect(result.current.job?.status).toBe("running"));
@@ -34,7 +34,7 @@ test("useProposals polls running job then reloads", async () => {
 test("failed job shows error and stops polling", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.mocked(proposalsApi.listProposals).mockResolvedValue(listResponse([proposal()], running()));
-  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "failed", processed: 0, total: 6, error: "計算に失敗" });
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "failed", processed: 0, total: 6, error: "計算に失敗", notice: null });
 
   const { result } = renderHook(() => useProposals({ departmentCode: "VEG" }, { pollMs: 1000 }));
   await waitFor(() => expect(result.current.job?.status).toBe("running"));
@@ -54,7 +54,7 @@ test("recalculate starts polling the returned job", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.mocked(proposalsApi.listProposals).mockResolvedValue(listResponse([proposal()]));
   vi.mocked(proposalsApi.recalculate).mockResolvedValue(running(0, 1));
-  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null });
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null, notice: null });
 
   const { result } = renderHook(() => useProposals({ departmentCode: "VEG", targetDate: "2026-10-20" }));
   await waitFor(() => expect(result.current.loading).toBe(false));
@@ -76,7 +76,7 @@ test("job progress failure is retried at the next interval", async () => {
     .mockResolvedValueOnce(listResponse([proposal()]));
   vi.mocked(proposalsApi.getJob)
     .mockRejectedValueOnce({})
-    .mockResolvedValueOnce({ id: 5, status: "succeeded", processed: 1, total: 1, error: null });
+    .mockResolvedValueOnce({ id: 5, status: "succeeded", processed: 1, total: 1, error: null, notice: null });
 
   const { result } = renderHook(() => useProposals({ departmentCode: "VEG" }, { pollMs: 1000 }));
   await waitFor(() => expect(result.current.job?.status).toBe("running"));

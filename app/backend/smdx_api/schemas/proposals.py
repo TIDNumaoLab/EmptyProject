@@ -63,6 +63,8 @@ class JobOut(BaseModel):
     processed: int
     total: int
     error: str | None
+    # 予測の注記(時間帯の設定変更など)
+    notice: str | None = None
 
 
 class FreshnessOut(BaseModel):

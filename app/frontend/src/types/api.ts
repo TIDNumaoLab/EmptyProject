@@ -144,6 +144,8 @@ export interface Job {
   processed: number;
   total: number;
   error: string | null;
+  // 予測の注記(時間帯の設定変更など)
+  notice: string | null;
 }
 
 export interface ProposalList {

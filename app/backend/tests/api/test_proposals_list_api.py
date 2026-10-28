@@ -22,7 +22,8 @@ def test_first_open_starts_job_then_returns_proposals(client, login, user_factor
     assert first["freshness"] == {"calculated_at": None, "weather_fetched_at": None, "inventory_based_at": None}
     # TestClient は応答後に BackgroundTasks を実行する → ジョブ完了
     job = client.get(f"/api/proposals/jobs/{first['job']['id']}").json()
-    assert job == {"id": first["job"]["id"], "status": "succeeded", "processed": 1, "total": 1, "error": None}
+    assert job == {"id": first["job"]["id"], "status": "succeeded", "processed": 1, "total": 1, "error": None,
+                   "notice": None}
     second = list_veg(client)
     assert second["job"] is None and second["notice"] is None
     p = second["proposals"][0]
@@ -75,9 +76,9 @@ def test_recalculate_requires_csrf_header(app, login, user_factory):
 
 @pytest.mark.db
 def test_job_progress_permissions(client, login, user_factory, db, fixed_now):
-    from smdx_api.proposals.jobs import start_or_get_job
+    from smdx_api.proposals.jobs import JobKey, start_or_get_job
 
-    job, _ = start_or_get_job(db, dept(db, "FISH"), date(2026, 10, 16), fixed_now.value, total=2)
+    job, _ = start_or_get_job(db, dept(db, "FISH"), JobKey("default", date(2026, 10, 16)), fixed_now.value, total=2)
     login(client, user_factory(departments=("VEG",)))
     assert client.get(f"/api/proposals/jobs/{job.id}").status_code == 403
     assert client.get("/api/proposals/jobs/999999").status_code == 404
@@ -118,9 +119,9 @@ def test_unadjusted_proposal_is_replaced_on_recalc(client, login, user_factory, 
 
 @pytest.mark.db
 def test_manual_recalc_returns_running_job_when_exists(client, login, user_factory, veg_setup, db, fixed_now):
-    from smdx_api.proposals.jobs import start_or_get_job
+    from smdx_api.proposals.jobs import JobKey, start_or_get_job
 
-    running, _ = start_or_get_job(db, dept(db, "VEG"), date(2026, 10, 16), fixed_now.value, total=1)
+    running, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", date(2026, 10, 16)), fixed_now.value, total=1)
     login(client, user_factory(departments=("VEG",)))
     res = client.post("/api/proposals/recalculate", json={"department_code": "VEG"})
     assert res.json()["job"]["id"] == running.id
@@ -183,11 +184,29 @@ def test_no_weather_does_not_loop_jobs(client, login, user_factory, veg_setup, a
 
 
 @pytest.mark.db
+def test_list_returns_notice_of_last_succeeded_job(client, login, user_factory, db, fixed_now, test_services):
+    from smdx_api.proposals.jobs import JobKey, start_or_get_job
+
+    old, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", date(2026, 10, 16)), fixed_now.value, total=1)
+    old.status, old.notice = "succeeded", "古い注記"
+    db.commit()
+    fixed_now.advance(seconds=60)
+    new, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", date(2026, 10, 16)), fixed_now.value, total=1)
+    new.status, new.notice = "succeeded", "時間帯の設定が変わったため再学習が必要です"
+    db.commit()
+    login(client, user_factory(departments=("VEG",)))
+    assert list_veg(client)["notice"] == "時間帯の設定が変わったため再学習が必要です"
+    assert client.get(f"/api/proposals/jobs/{new.id}").json()["notice"] == "時間帯の設定が変わったため再学習が必要です"
+    # 対象日を指定した一覧は別の種別のジョブを見る
+    assert client.get("/api/proposals", params={"department_code": "VEG", "target_date": "2026-10-16"}).json()["notice"] is None
+
+
+@pytest.mark.db
 def test_job_progress_reports_timed_out_running_job_as_failed(client, login, user_factory, db, fixed_now):
     """再起動などで止まった実行中のジョブは、10分を超えたら失敗として返す(画面が待ち続けないように)。"""
-    from smdx_api.proposals.jobs import JOB_TIMEOUT, start_or_get_job
+    from smdx_api.proposals.jobs import JOB_TIMEOUT, JobKey, start_or_get_job
 
-    job, _ = start_or_get_job(db, dept(db, "VEG"), date(2026, 10, 16), fixed_now.value, total=2)
+    job, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", date(2026, 10, 16)), fixed_now.value, total=2)
     login(client, user_factory(departments=("VEG",)))
     assert client.get(f"/api/proposals/jobs/{job.id}").json()["status"] == "running"
     fixed_now.advance(seconds=JOB_TIMEOUT.total_seconds() + 1)

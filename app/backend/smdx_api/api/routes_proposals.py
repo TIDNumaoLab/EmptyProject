@@ -22,10 +22,10 @@ from smdx_api.proposals.actions import ProposalNotFound
 from smdx_api.proposals.basis import BASIS_KEYS
 from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets, department_products, fresh_target_dates
 from smdx_api.proposals.deadlines import apply_deadlines
-from smdx_api.proposals.jobs import JOB_TIMEOUT, TIMED_OUT, start_or_get_job
+from smdx_api.proposals.jobs import JOB_TIMEOUT, TIMED_OUT, JobKey, start_or_get_job
 from smdx_api.proposals.rules import InputError, StateError
 from smdx_api.proposals.schedule import TargetOutOfRange, check_target_range
-from smdx_api.proposals.service import JobLauncher, job_target_date, needs_auto_recalc
+from smdx_api.proposals.service import JobLauncher, job_key, needs_auto_recalc
 from smdx_api.schemas.proposals import (
     AdjustIn,
     ApproveIn,
@@ -105,14 +105,26 @@ def _freshness(proposals: Sequence[Proposal]) -> FreshnessOut:
 
 
 def _job_out(job: ProposalJob) -> JobOut:
-    return JobOut(id=job.id, status=job.status, processed=job.processed, total=job.total, error=job.error)
+    return JobOut(id=job.id, status=job.status, processed=job.processed, total=job.total, error=job.error,
+                  notice=job.notice)
 
 
-def _running_job(db: Session, department: Department, target_date: date, now: datetime) -> ProposalJob | None:
-    return db.scalar(select(ProposalJob).where(
-        ProposalJob.department_id == department.id, ProposalJob.target_date == target_date,
+def _jobs(department: Department, key: JobKey):
+    return select(ProposalJob).where(ProposalJob.department_id == department.id, ProposalJob.scope == key.scope,
+                                     ProposalJob.target_date == key.target_date)
+
+
+def _running_job(db: Session, department: Department, key: JobKey, now: datetime) -> ProposalJob | None:
+    return db.scalar(_jobs(department, key).where(
         ProposalJob.status == "running", ProposalJob.started_at >= now - JOB_TIMEOUT,
     ).order_by(ProposalJob.started_at.desc()).limit(1))
+
+
+def _last_notice(db: Session, department: Department, key: JobKey) -> str | None:
+    """同じ部門・種別・対象日で最後に成功したジョブの注記。"""
+    job = db.scalar(_jobs(department, key).where(ProposalJob.status == "succeeded")
+                    .order_by(ProposalJob.started_at.desc(), ProposalJob.id.desc()).limit(1))
+    return job.notice if job else None
 
 
 def _shown(db: Session, department: Department, now: datetime, settings, targets: FreshTargets,
@@ -149,18 +161,18 @@ def list_proposals(
     apply_deadlines(db, now, department.id)
     db.commit()
     settings = load_settings(db)
-    job_date = job_target_date(department, now, settings, targets)
+    key = job_key(department, now, settings, targets)
     job = None
     if needs_auto_recalc(db, department, now, settings, services, targets):
         total = len(fresh_target_dates(department_products(db, department), now, settings, targets))
-        job, created = start_or_get_job(db, department, job_date, now, total)
+        job, created = start_or_get_job(db, department, key, now, total)
         if created:
             launcher.launch(background_tasks, job.id, targets)
     else:
-        job = _running_job(db, department, job_date, now)
+        job = _running_job(db, department, key, now)
     shown = _shown(db, department, now, settings, targets, status)
     return ProposalListOut(proposals=proposals_out(db, shown), freshness=_freshness(shown),
-                           job=_job_out(job) if job else None, notice=None)
+                           job=_job_out(job) if job else None, notice=_last_notice(db, department, key))
 
 
 @router.post("/recalculate", response_model=JobResponse)
@@ -177,7 +189,7 @@ def recalculate(
     targets = _targets(body.target_date, now)
     settings = load_settings(db)
     total = len(fresh_target_dates(department_products(db, department), now, settings, targets))
-    job, created = start_or_get_job(db, department, job_target_date(department, now, settings, targets), now, total)
+    job, created = start_or_get_job(db, department, job_key(department, now, settings, targets), now, total)
     if created:
         launcher.launch(background_tasks, job.id, targets)
     return JobResponse(job=_job_out(job))

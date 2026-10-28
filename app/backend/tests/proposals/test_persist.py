@@ -126,7 +126,7 @@ def test_persist_handles_row_created_by_another_job(db, proposal_factory, monkey
 def test_job_error_message_hides_internal_details(db, veg_setup, job_session_factory, tmp_path, fixed_now):
     from smdx_api.db.models import ProposalJob
     from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets
-    from smdx_api.proposals.jobs import JOB_FAILED, run_job, start_or_get_job
+    from smdx_api.proposals.jobs import JOB_FAILED, JobKey, run_job, start_or_get_job
     from tests.fake_models import const_registry
     from tests.fakes import FakeWeatherClient
 
@@ -134,7 +134,7 @@ def test_job_error_message_hides_internal_details(db, veg_setup, job_session_fac
         def fetch_forecast(self, start, end):
             raise RuntimeError("(psycopg.errors.UniqueViolation) duplicate key value")
 
-    job, _ = start_or_get_job(db, dept(db, "VEG"), date(2026, 10, 16), fixed_now.value, total=1)
+    job, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", date(2026, 10, 16)), fixed_now.value, total=1)
     run_job(job.id, FreshTargets(None), job_session_factory, ComputeServices(const_registry(tmp_path), ExplodingWeather()),
             lambda: fixed_now.value)
     db.expire_all()

@@ -248,14 +248,21 @@ class ProposalHistory(TimestampMixin, Base):
 
 class ProposalJob(TimestampMixin, Base):
     __tablename__ = "proposal_jobs"
-    __table_args__ = (CheckConstraint(_in("status", ("running", "succeeded", "failed")), name="status"),)
+    __table_args__ = (
+        CheckConstraint(_in("status", ("running", "succeeded", "failed")), name="status"),
+        CheckConstraint(_in("scope", ("default", "date")), name="scope"),
+    )
 
     department_id: Mapped[int] = mapped_column(ForeignKey("departments.id"))
+    # default = 既定表示(target_date は発注日)、date = 対象日の指定(target_date は納品日)
+    scope: Mapped[str] = mapped_column(String(16), default="default", server_default="default")
     target_date: Mapped[dt.date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(16))
     processed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     total: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     error: Mapped[str | None] = mapped_column(Text)
+    # 予測の注記(時間帯の設定変更など)。一覧の notice に出す
+    notice: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[dt.datetime] = mapped_column(TZDateTime)
     finished_at: Mapped[dt.datetime | None] = mapped_column(TZDateTime)
 

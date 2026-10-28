@@ -63,4 +63,4 @@ export function listResponse(proposals: Proposal[], job: Job | null = null, over
   };
 }
 
-export const running = (processed = 3, total = 6): Job => ({ id: 5, status: "running", processed, total, error: null });
+export const running = (processed = 3, total = 6): Job => ({ id: 5, status: "running", processed, total, error: null, notice: null });

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from smdx_api.db.models import Proposal, ProposalJob
 from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets
-from smdx_api.proposals.jobs import JOB_TIMEOUT, run_job, start_or_get_job
+from smdx_api.proposals.jobs import JOB_TIMEOUT, JobKey, run_job, start_or_get_job
 from tests.conftest import dept, jst
 from tests.fake_models import const_registry
 from tests.fakes import FakeWeatherClient
@@ -22,21 +22,31 @@ def count_proposals(db) -> int:
 
 @pytest.mark.db
 def test_start_or_get_job_dedups(db, fixed_now):
-    j1, created1 = start_or_get_job(db, dept(db, "VEG"), DAY, fixed_now.value, total=6)
-    j2, created2 = start_or_get_job(db, dept(db, "VEG"), DAY, fixed_now.value + timedelta(minutes=9), total=6)
+    j1, created1 = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), fixed_now.value, total=6)
+    j2, created2 = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), fixed_now.value + timedelta(minutes=9), total=6)
     assert created1 and not created2 and j1.id == j2.id
     assert (j1.status, j1.processed, j1.total, j1.started_at) == ("running", 0, 6, fixed_now.value)
     # 部門・対象日が違えば別のジョブ
-    j3, created3 = start_or_get_job(db, dept(db, "FISH"), DAY, fixed_now.value, total=1)
-    j4, created4 = start_or_get_job(db, dept(db, "VEG"), DAY + timedelta(days=1), fixed_now.value, total=1)
+    j3, created3 = start_or_get_job(db, dept(db, "FISH"), JobKey("default", DAY), fixed_now.value, total=1)
+    j4, created4 = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY + timedelta(days=1)), fixed_now.value, total=1)
     assert created3 and created4 and len({j1.id, j3.id, j4.id}) == 3
 
 
 @pytest.mark.db
+def test_default_and_explicit_date_jobs_are_separate(db, fixed_now):
+    # 締め後の既定表示(発注日 10/17)と、10/17 を納品日に指定した要求は計算する提案が違うため、別のジョブにする
+    d = date(2026, 10, 17)
+    j1, created1 = start_or_get_job(db, dept(db, "VEG"), JobKey("default", d), fixed_now.value, total=6)
+    j2, created2 = start_or_get_job(db, dept(db, "VEG"), JobKey("date", d), fixed_now.value, total=1)
+    assert created1 and created2 and j1.id != j2.id
+    assert (j1.scope, j2.scope) == ("default", "date")
+
+
+@pytest.mark.db
 def test_stale_running_job_is_failed_and_replaced(db, fixed_now):
-    j1, _ = start_or_get_job(db, dept(db, "VEG"), DAY, fixed_now.value, total=6)
+    j1, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), fixed_now.value, total=6)
     later = fixed_now.value + JOB_TIMEOUT + timedelta(seconds=1)
-    j2, created = start_or_get_job(db, dept(db, "VEG"), DAY, later, total=6)
+    j2, created = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), later, total=6)
     db.refresh(j1)
     assert created and j2.id != j1.id
     assert (j1.status, j1.error, j1.finished_at) == ("failed", "タイムアウトしました", later)
@@ -54,7 +64,7 @@ def test_concurrent_start_creates_one_job(db_engine, fixed_now):
             with Session(db_engine) as s:
                 d = dept(s, "VEG")
                 barrier.wait()
-                job, created = start_or_get_job(s, d, date(2026, 10, 30), fixed_now.value, total=3)
+                job, created = start_or_get_job(s, d, JobKey("default", date(2026, 10, 30)), fixed_now.value, total=3)
                 results.append((job.id, created))
         except Exception as e:  # pragma: no cover - 失敗の内容を試験の結果に出す
             errors.append(e)
@@ -75,7 +85,7 @@ def test_concurrent_start_creates_one_job(db_engine, fixed_now):
 
 @pytest.mark.db
 def test_run_job_succeeds_and_creates_proposals(db, veg_setup, job_session_factory, baseline_services, fixed_now):
-    job, _ = start_or_get_job(db, dept(db, "VEG"), DAY, fixed_now.value, total=1)
+    job, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), fixed_now.value, total=1)
     run_job(job.id, FreshTargets(None), job_session_factory, baseline_services, lambda: fixed_now.value)
     db.expire_all()
     job = db.get(ProposalJob, job.id)
@@ -87,13 +97,25 @@ def test_run_job_succeeds_and_creates_proposals(db, veg_setup, job_session_facto
 
 
 @pytest.mark.db
+def test_run_job_keeps_notice(db, veg_setup, job_session_factory, baseline_services, fixed_now, monkeypatch):
+    from smdx_api.proposals import jobs
+
+    monkeypatch.setattr(jobs, "compute_fresh", lambda *a, **k: ([], "時間帯の設定が変わったため再学習が必要です"))
+    job, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), fixed_now.value, total=1)
+    run_job(job.id, FreshTargets(None), job_session_factory, baseline_services, lambda: fixed_now.value)
+    db.expire_all()
+    job = db.get(ProposalJob, job.id)
+    assert (job.status, job.notice) == ("succeeded", "時間帯の設定が変わったため再学習が必要です")
+
+
+@pytest.mark.db
 def test_run_job_failure_records_error(db, veg_setup, job_session_factory, tmp_path, fixed_now):
     # 推論の失敗・気象の取得失敗はベースラインに切り替わるため、想定外の例外を気象クライアントから出す
     class ExplodingWeather(FakeWeatherClient):
         def fetch_forecast(self, start, end):
             raise RuntimeError("計算の途中で失敗" + "x" * 600)
 
-    job, _ = start_or_get_job(db, dept(db, "VEG"), DAY, fixed_now.value, total=1)
+    job, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", DAY), fixed_now.value, total=1)
     run_job(job.id, FreshTargets(None), job_session_factory, ComputeServices(const_registry(tmp_path), ExplodingWeather()),
             lambda: fixed_now.value)
     db.expire_all()

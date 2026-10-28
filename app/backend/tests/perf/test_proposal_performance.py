@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from smdx_api.db.models import Proposal
 from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets
-from smdx_api.proposals.jobs import run_job, start_or_get_job
+from smdx_api.proposals.jobs import JobKey, run_job, start_or_get_job
 from tests.conftest import dept, jst
 from tests.fake_models import forest_registry
 from tests.fakes import FakeWeatherClient
@@ -40,7 +40,7 @@ def count_proposals(db) -> int:
 @pytest.mark.db
 def test_job_for_20_products_within_60s(db, twenty_products, job_session_factory, fixed_now, tmp_path):
     services = ComputeServices(forest_registry(tmp_path, CODES), FakeWeatherClient())
-    job, _ = start_or_get_job(db, dept(db, "VEG"), fixed_now.value.date(), fixed_now.value, total=20)
+    job, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", fixed_now.value.date()), fixed_now.value, total=20)
     t = time.perf_counter()
     run_job(job.id, FreshTargets(None), job_session_factory, services, lambda: fixed_now.value)
     elapsed = time.perf_counter() - t
