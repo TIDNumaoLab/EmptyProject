@@ -63,6 +63,8 @@ export default function ImportsPage() {
     <section>
       <h1>データ取込</h1>
       <ErrorBanner message={error} />
+      {/* Excel で保存し直すと Shift_JIS や 2026/10/15 の形式になりやすいため、形式を書いておく */}
+      <p className={styles.muted}>標準取込形式の CSV(文字コードは UTF-8、日付は YYYY-MM-DD)を選んでください。</p>
       <form className={styles.toolbar} onSubmit={onSubmit}>
         <label className={styles.field}>
           種類

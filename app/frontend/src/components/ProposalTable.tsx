@@ -15,11 +15,12 @@ interface Props {
   onApprove(p: Proposal): void;
   onCancel(p: Proposal): void;
   onAdopt(p: Proposal): void;
+  onDirtyChange?(id: number, dirty: boolean): void;
 }
 
 const HEADERS = ["選択", "納品日", "商品", "提案数", "予測値", "天候", "祝日・特売", "前週同曜日", "在庫・発注残・持越見込", "状態", "警告", "差分", "操作"];
 
-export default function ProposalTable({ proposals, selected, skipped, approveLocked, computing = false, onSelect, onSave, onApprove, onCancel, onAdopt }: Props) {
+export default function ProposalTable({ proposals, selected, skipped, approveLocked, computing = false, onSelect, onSave, onApprove, onCancel, onAdopt, onDirtyChange }: Props) {
   if (proposals.length === 0) {
     return (
       <p className={pageStyles.muted}>
@@ -49,6 +50,7 @@ export default function ProposalTable({ proposals, selected, skipped, approveLoc
             onApprove={() => onApprove(p)}
             onCancel={() => onCancel(p)}
             onAdopt={() => onAdopt(p)}
+            onDirtyChange={onDirtyChange ? (dirty) => onDirtyChange(p.id, dirty) : undefined}
           />
         ))}
       </tbody>

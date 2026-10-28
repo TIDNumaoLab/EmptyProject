@@ -6,7 +6,7 @@ import { listApprovedOrders } from "../api/orders";
 import { useAuth } from "../auth/AuthContext";
 import DepartmentSelect, { selectableDepartments } from "../components/DepartmentSelect";
 import ErrorBanner from "../components/ErrorBanner";
-import { formatMonthDay } from "../format";
+import { formatMonthDay, STATUS_LABELS } from "../format";
 import styles from "../styles/page.module.css";
 import type { ApprovedOrder } from "../types/api";
 
@@ -61,6 +61,7 @@ export default function ApprovedOrdersPage() {
               <th>納品日</th>
               <th>発注数</th>
               <th>発注単位</th>
+              <th>状態</th>
               <th>承認者</th>
             </tr>
           </thead>
@@ -72,6 +73,7 @@ export default function ApprovedOrdersPage() {
                 <td>{formatMonthDay(r.target_date)}</td>
                 <td className={styles.num}>{r.proposed_qty}</td>
                 <td className={styles.num}>{r.order_unit}</td>
+                <td>{STATUS_LABELS[r.status]}</td>
                 <td>{r.approved_by_name ?? "—"}</td>
               </tr>
             ))}

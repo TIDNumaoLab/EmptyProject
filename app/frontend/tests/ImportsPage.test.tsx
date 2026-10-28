@@ -34,6 +34,12 @@ test("staff cannot choose products kind but manager can", async () => {
   expect(kindOptions()).toEqual(["POS売上", "在庫", "廃棄"]);
 });
 
+test("shows file format hint", async () => {
+  // Excel で保存し直すと形式が変わりやすいため、画面に形式を書いておく(PR #2 の補足)
+  await renderPage(<ImportsPage />, staff(VEG), "データ取込");
+  expect(screen.getByText(/文字コードは UTF-8、日付は YYYY-MM-DD/)).toBeInTheDocument();
+});
+
 test("manager sees products kind", async () => {
   await renderPage(<ImportsPage />, manager(), "データ取込");
   expect(kindOptions()).toEqual(["商品マスタ", "POS売上", "在庫", "廃棄"]);

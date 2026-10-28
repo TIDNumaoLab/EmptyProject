@@ -168,3 +168,22 @@ test("approve buttons are disabled while recalculating", async () => {
   await userEvent.setup().click(screen.getByLabelText("キャベツ を選択"));
   expect(screen.getByRole("button", { name: "一括承認" })).toBeDisabled();
 });
+
+test("unsaved input is kept when a recalculation finishes, until the user applies it", async () => {
+  // 保存していない入力がある間は差し替えず「反映する」を出す(PR #6 の軽微な課題)
+  vi.mocked(proposalsApi.listProposals)
+    .mockResolvedValueOnce(listResponse([proposal({ proposed_qty: 24 })], running(0, 1)))
+    .mockResolvedValueOnce(listResponse([proposal({ proposed_qty: 30, updated_at: "2026-10-16T15:12:00+09:00" })]));
+  vi.mocked(proposalsApi.getJob).mockResolvedValue({ id: 5, status: "succeeded", processed: 1, total: 1, error: null, notice: null });
+  await renderPage(<OrdersPage />, staff(VEG), "発注");
+  const input = await screen.findByLabelText("キャベツ の提案数");
+  const user = userEvent.setup();
+  await user.clear(input);
+  await user.type(input, "20");
+  expect(await screen.findByText("新しい計算結果があります。", undefined, { timeout: 4000 })).toBeInTheDocument();
+  expect(screen.getByLabelText("キャベツ の提案数")).toHaveValue(20);
+  expect(proposalsApi.listProposals).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole("button", { name: "反映する" }));
+  await waitFor(() => expect(screen.getByLabelText("キャベツ の提案数")).toHaveValue(30));
+  expect(screen.queryByText("新しい計算結果があります。")).not.toBeInTheDocument();
+});

@@ -163,7 +163,7 @@ export default function PromotionsPage() {
             {rows.map((p) => (
               <tr key={p.id}>
                 <td>{p.product_name}</td>
-                <td>{me?.accessible_departments.find((d) => d.code === p.department_code)?.name ?? p.department_code}</td>
+                <td>{p.department_name}</td>
                 <td>
                   {shortDate(p.start_date)}〜{shortDate(p.end_date)}
                 </td>

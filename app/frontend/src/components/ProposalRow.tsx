@@ -20,6 +20,8 @@ interface Props {
   onApprove(): void;
   onCancel(): void;
   onAdopt(): void;
+  // 保存していない数量の入力があるかが変わったとき
+  onDirtyChange?(dirty: boolean): void;
 }
 
 function num(v: number | null, digits?: number): string {
@@ -35,7 +37,7 @@ function weatherText(p: Proposal): string {
   return parts.join(" ");
 }
 
-export default function ProposalRow({ proposal: p, selected, skippedReason, approveLocked = false, onSelect, onSave, onApprove, onCancel, onAdopt }: Props) {
+export default function ProposalRow({ proposal: p, selected, skippedReason, approveLocked = false, onSelect, onSave, onApprove, onCancel, onAdopt, onDirtyChange }: Props) {
   const [qty, setQty] = useState(String(p.proposed_qty));
   const [reason, setReason] = useState<AdjustReason | "">("");
   const [note, setNote] = useState("");
@@ -49,6 +51,11 @@ export default function ProposalRow({ proposal: p, selected, skippedReason, appr
   const pending = p.status === "pending";
   const beforeDeadline = Date.now() < new Date(p.deadline).getTime();
   const dirty = qty !== String(p.proposed_qty);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  // 行が消えたら入力も無くなる
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   const valid = /^\d+$/.test(qty.trim());
   const name = p.product_name;
 

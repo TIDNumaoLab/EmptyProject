@@ -49,6 +49,7 @@ export interface Product {
   product_code: string;
   name: string;
   department_code: string;
+  department_name: string;
   order_unit: number;
   lead_time_days: number;
   can_carry_over: boolean;
@@ -62,6 +63,7 @@ export interface Promotion {
   product_code: string;
   product_name: string;
   department_code: string;
+  department_name: string;
   start_date: string;
   end_date: string;
   description: string;
