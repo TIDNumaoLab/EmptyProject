@@ -148,3 +148,25 @@ def test_row_baseline_with_loaded_model_is_not_model_change(db, veg_setup, fixed
 def baseline_services_weather():
     from tests.fakes import FakeWeatherClient
     return FakeWeatherClient()
+
+
+@pytest.mark.db
+def test_adopt_then_recalc_clears_recalc_pending(db, veg_setup, baseline_services, fixed_now, user_factory):
+    # 採用 → 次の判定で再計算 → 印が消えて、再計算を繰り返さない(PR #7 レビューの指摘8)
+    from sqlalchemy import select
+
+    from smdx_api.db.models import Proposal
+    from smdx_api.proposals.actions import RECALC_PENDING, adopt_recalculated
+
+    now = fixed_now.value
+    create_all(db, baseline_services, now)
+    p = db.scalars(select(Proposal)).one()
+    p.is_adjusted, p.proposed_qty, p.recalculated_qty = True, 12, p.proposed_qty
+    db.flush()
+    adopt_recalculated(db, p.id, user_factory().id, now + timedelta(minutes=1))
+    assert p.basis[RECALC_PENDING] is True
+    assert needs(db, baseline_services, now + timedelta(minutes=2))
+    create_all(db, baseline_services, now + timedelta(minutes=2))
+    db.refresh(p)
+    assert RECALC_PENDING not in p.basis
+    assert not needs(db, baseline_services, now + timedelta(minutes=3))

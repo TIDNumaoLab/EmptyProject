@@ -30,10 +30,10 @@ DEFAULT_BUSINESS_HOURS = (10, 20)
 NOT_ADOPTED = "ベースラインを上回るモデルがないため採用しません"
 
 
-
 def model_predictions(models: dict, valid, cols: list[str]) -> dict[str, np.ndarray]:
     """検証期間の予測。本体の推論と同じ規則(実績なしは0、気象の欠けた行はベースライン、負は0)を当てはめる。"""
     return {name: np.array(apply_inference_rules(valid, m.predict(valid[cols]))[0]) for name, m in models.items()}
+
 
 def _safe_console() -> None:
     """表示できない文字は ? に置き換える(UTF-8 でない端末で日本語を出しても異常終了しない)。"""

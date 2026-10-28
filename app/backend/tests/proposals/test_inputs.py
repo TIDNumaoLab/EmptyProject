@@ -184,3 +184,22 @@ def test_weather_frame():
     df = weather_frame(ForecastResult(True, jst(2026, 10, 16, 9), rows))
     assert list(df.columns) == ["time", "weather_code", "temperature", "precipitation_probability", "precipitation"]
     assert len(df) == 24 and df["time"].iloc[0] == jst(2026, 10, 16, 0) and df["weather_code"].iloc[0] == 61
+
+
+@pytest.mark.db
+def test_backlog_batched_for_products_and_inventory_boundaries(db, product_factory, proposal_factory):
+    # まとめて読んだ確定分を、商品ごとの在庫基準日時で絞る。納品時刻ちょうどの在庫は納品後とみなす(PR #7 レビューの指摘8)
+    a, b = product_factory(code="VEG-001"), product_factory(code="VEG-002")
+    proposal_factory(a, target=date(2026, 10, 16), qty=6, status="confirmed")   # 10/16 10:00 納品
+    proposal_factory(a, target=date(2026, 10, 17), qty=4, status="confirmed")   # 10/17 10:00 納品
+    proposal_factory(b, target=date(2026, 10, 16), qty=9, status="confirmed")
+    orders = confirmed_orders(db, [a.id, b.id], date(2026, 10, 16), date(2026, 10, 18))
+    assert sorted(orders[a.id]) == [(date(2026, 10, 16), 6), (date(2026, 10, 17), 4)]
+    assert orders[b.id] == [(date(2026, 10, 16), 9)]
+    # 在庫が納品時刻の前なら当日の納品分も発注残、ちょうど・後なら含めない
+    assert backlog_qty(orders[a.id], jst(2026, 10, 16, 9, 59), date(2026, 10, 18), time(10)) == 10
+    assert backlog_qty(orders[a.id], jst(2026, 10, 16, 10), date(2026, 10, 18), time(10)) == 4
+    assert backlog_qty(orders[a.id], jst(2026, 10, 16, 10, 1), date(2026, 10, 18), time(10)) == 4
+    # 対象の納品日以降は含めない
+    assert backlog_qty(orders[a.id], jst(2026, 10, 16, 9), date(2026, 10, 17), time(10)) == 6
+    assert backlog_qty(orders[b.id], jst(2026, 10, 16, 9), date(2026, 10, 18), time(10)) == 9

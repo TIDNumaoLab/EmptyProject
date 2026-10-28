@@ -101,7 +101,8 @@ def compute_fresh(
     targets: FreshTargets,
 ) -> tuple[list[ComputedProposal], str | None]:
     """部門の生鮮の提案を計算する(保存はしない)。2つ目の戻り値は予測の注記(時間帯の設定変更など)。"""
-    # 発注残の集計の前に、期限経過による状態更新を行う
+    # 発注残の集計の前に、期限経過による状態更新を行う。ジョブ(run_job)からは先に確定済みのため、
+    # ここでは対象の行が無くロックも取らない。ジョブを通さずに呼ぶ場合(試験など)のために残す
     apply_deadlines(db, now, department.id)
     products = department_products(db, department)
     target_by_id = fresh_target_dates(products, now, settings, targets)
