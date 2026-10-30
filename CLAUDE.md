@@ -34,6 +34,7 @@
 
 - `app/` — システム一式
 - `設計書/` — 要件定義書・基本設計書・詳細設計書・技術スタック
+- `提案資料/` — 店舗向けの提案書・システムマニュアル
 - `.claude/settings.json` — Claude Code のチーム共有設定
 - `CLAUDE.md`, `.gitignore`
 
