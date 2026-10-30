@@ -1,0 +1,2 @@
+# make_data.py が実行日に合わせて作る CSV(毎回作り直す)
+output/
