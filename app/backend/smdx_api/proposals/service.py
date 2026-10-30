@@ -10,12 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smdx_api.clock import JST
-from smdx_api.db.models import Department, Proposal
+from smdx_api.db.models import Department, Proposal, ProposalJob
 from smdx_api.predictor.predict import BASELINE_VERSION
 from smdx_api.proposals.actions import RECALC_PENDING
 from smdx_api.proposals.compute_fresh import ComputeServices, FreshTargets, department_products, fresh_target_dates
 from smdx_api.proposals.inputs import freshness_context
-from smdx_api.proposals.jobs import JobKey, run_job
+from smdx_api.proposals.jobs import JobKey, run_job, running_job, start_or_get_job
 from smdx_api.proposals.rules import ProposalFreshness, is_stale
 from smdx_api.proposals.schedule import deli_default_target, open_bands
 from smdx_api.settings.values import AppSettings
@@ -108,3 +108,18 @@ class JobLauncher:
 
     def launch(self, background_tasks: BackgroundTasks, job_id: int, targets: FreshTargets) -> None:
         background_tasks.add_task(run_job, job_id, targets, self.session_factory, self.services, self.now_fn, self.clock)
+
+
+def start_auto_recalc(
+    db: Session, department: Department, now: datetime, settings: AppSettings, services: ComputeServices,
+    targets: FreshTargets, launcher: JobLauncher, background_tasks: BackgroundTasks,
+) -> ProposalJob | None:
+    """最新性判定で必要ならジョブを開始し、そのジョブを返す。不要なら実行中のジョブ(無ければ None)を返す。"""
+    key = job_key(department, now, settings, targets)
+    if not needs_auto_recalc(db, department, now, settings, services, targets):
+        return running_job(db, department, key, now)
+    total = len(wanted(db, department, now, settings, targets))
+    job, created = start_or_get_job(db, department, key, now, total)
+    if created:
+        launcher.launch(background_tasks, job.id, resolved_targets(department, now, settings, targets))
+    return job
