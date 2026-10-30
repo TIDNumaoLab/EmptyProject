@@ -1,6 +1,7 @@
 // 提案の画面の共通部分。発注(/orders、生鮮)と製造計画(/production、惣菜)で使う(詳細設計書「発注(/orders)」「製造計画(/production)」)。
 // 製造計画は行を「商品×時間帯」とし、時間帯・製造開始(=承認期限)・陳列残数の列と、陳列残数の入力欄を出す
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { errorMessage, statusOf } from "../api/client";
 import {
   adjustProposal,
@@ -44,11 +45,15 @@ function bandLabels(settings: Settings | null): ((band: number) => string) | nul
 export default function ProposalPage({ mode }: { mode: ProposalMode }) {
   const production = mode === "production";
   const { me } = useAuth();
-  const [department, setDepartment] = useState(
-    selectableDepartments(me?.accessible_departments ?? [], mode)[0]?.code ?? "",
-  );
+  // 今日の状況から開いたときは、URL の部門(department)と対象日(target_date)を選んだ状態にする
+  const [params] = useSearchParams();
+  const [department, setDepartment] = useState(() => {
+    const options = selectableDepartments(me?.accessible_departments ?? [], mode);
+    const requested = params.get("department");
+    return options.find((d) => d.code === requested)?.code ?? options[0]?.code ?? "";
+  });
   const [products, setProducts] = useState<Product[]>([]);
-  const [targetDate, setTargetDate] = useState("");
+  const [targetDate, setTargetDate] = useState(() => params.get("target_date") ?? "");
   const [status, setStatus] = useState<ProposalStatus | "">("");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
