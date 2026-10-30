@@ -150,6 +150,38 @@ def test_lead_time_2_has_middle_day(db, product_factory, add_pos, add_inventory,
 
 
 @pytest.mark.db
+def test_lead_time_0_has_no_expected_sales(db, product_factory, add_pos, add_inventory, fixed_now, baseline_services):
+    # 納品日が当日(リードタイム0)の場合は販売見込を数えない
+    fixed_now.set(jst(2026, 10, 16, 15))
+    p = product_factory(code="VEG-003", lead_time_days=0)
+    for i in range(14):
+        add_pos(p, date(2026, 10, 2) + timedelta(days=i), 10)
+    add_inventory(p, jst(2026, 10, 16, 14, 30), 8)
+    c = one(run(db, fixed_now.value, baseline_services)[0], "VEG-003")
+    assert c.target_date == date(2026, 10, 16) and c.deadline == jst(2026, 10, 16, 20)
+    # 販売見込0 → 持越見込 = 在庫 8、必要数 10 × 1.1 = 11 → 3
+    assert c.basis["expected_sales_qty"] == 0 and c.basis["carry_over_qty"] == 8 and c.qty == 3
+
+
+@pytest.mark.db
+def test_no_weather_when_forecast_lacks_target_day(db, veg_setup, fixed_now, tmp_path, monkeypatch):
+    # 予報は取れたが対象日(10/17)の行が無い → NO_WEATHER、その行はベースライン、予報取得日時は空
+    from smdx_api.proposals import compute_fresh as module
+    from smdx_api.weather_client.service import ForecastResult
+    from tests.fakes import FakeWeatherClient, hourly_rows
+
+    today = date(2026, 10, 16)
+    monkeypatch.setattr(module, "get_forecast",
+                        lambda *args, **kwargs: ForecastResult(True, fixed_now.value, hourly_rows(today, today)))
+    services = ComputeServices(const_registry(tmp_path, 5.0), FakeWeatherClient())
+    c = one(run(db, fixed_now.value, services)[0], "VEG-001")
+    assert c.warnings == ("NO_WEATHER",)
+    assert c.weather_fetched_at is None and c.basis["weather_fetched_at"] is None
+    assert c.basis["weather_code"] is None and c.basis["temperature"] is None
+    assert c.model_version == "baseline" and c.predicted_qty == pytest.approx(20)
+
+
+@pytest.mark.db
 def test_backlog_included_in_carry_over(db, veg_setup, fixed_now, baseline_services, proposal_factory):
     # LT1 の商品で、明日(10/17)向けの確定分は対象日(10/17)より前ではないので入らない。10/16 納品(在庫基準より前)も入らない
     proposal_factory(veg_setup, target=date(2026, 10, 16), qty=30, status="confirmed")

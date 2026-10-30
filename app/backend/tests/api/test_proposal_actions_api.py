@@ -116,6 +116,34 @@ def test_bulk_approve_api(client, login, user_factory, proposal_factory, fixed_n
 
 
 @pytest.mark.db
+def test_bulk_approve_item_limit(client, login, user_factory, proposal_factory, fixed_now):
+    # 1〜1000件。1001件は 422
+    login(client, user_factory(departments=("VEG",)))
+    p = proposal_factory()
+    items = [{"id": 999999 - i, "expected_qty": 0} for i in range(999)] + [{"id": p.id, "expected_qty": 10}]
+    res = client.post("/api/proposals/approve-bulk", json={"items": items})
+    assert res.status_code == 200 and res.json()["approved_ids"] == [p.id]
+    over = items + [{"id": 1, "expected_qty": 0}]
+    assert client.post("/api/proposals/approve-bulk", json={"items": over}).status_code == 422
+
+
+@pytest.mark.db
+def test_bulk_approve_duplicate_id_uses_first(client, login, user_factory, proposal_factory, fixed_now, db):
+    # 同じ ID が重なれば最初のものを使う(後の数量では承認しない)
+    login(client, user_factory(departments=("VEG",)))
+    p = proposal_factory(qty=10)
+    res = client.post("/api/proposals/approve-bulk", json={"items": [{"id": p.id, "expected_qty": 9},
+                                                                   {"id": p.id, "expected_qty": 10}]})
+    assert res.status_code == 200
+    assert res.json() == {"approved_ids": [], "skipped": [{"id": p.id, "reason": "数量が更新されたため一括承認から除外しました"}]}
+    db.refresh(p)
+    assert p.status == "pending"
+    res = client.post("/api/proposals/approve-bulk", json={"items": [{"id": p.id, "expected_qty": 10},
+                                                                   {"id": p.id, "expected_qty": 9}]})
+    assert res.json() == {"approved_ids": [p.id], "skipped": []}
+
+
+@pytest.mark.db
 def test_staff_cannot_touch_other_department(client, login, user_factory, proposal_factory, fixed_now):
     login(client, user_factory(departments=("FISH",)))
     p = proposal_factory()  # VEG の提案
