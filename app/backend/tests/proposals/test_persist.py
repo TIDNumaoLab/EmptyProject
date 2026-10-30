@@ -12,10 +12,10 @@ from tests.conftest import dept, jst
 T0, T1 = jst(2026, 10, 16, 9), jst(2026, 10, 16, 12)
 
 
-def computed(product, qty, basis=None, warnings=(), target=date(2026, 10, 17)) -> ComputedProposal:
+def computed(product, qty, basis=None, warnings=(), target=date(2026, 10, 17), deadline=jst(2026, 10, 16, 20)) -> ComputedProposal:
     return ComputedProposal(
         product_id=product.id, product_code=product.product_code, target_date=target, time_band=None, qty=qty,
-        deadline=jst(2026, 10, 16, 20), warnings=tuple(warnings), basis=basis or {"inventory_qty": 8},
+        deadline=deadline, warnings=tuple(warnings), basis=basis or {"inventory_qty": 8},
         predicted_qty=float(qty), model_version="baseline", features={"sales_lag_7d": 20.0}, weather_fetched_at=T0,
     )
 
@@ -71,6 +71,22 @@ def test_persist_protected_same_value_clears_recalculated(db, proposal_factory):
     apply_computed(db, dept(db, "VEG"), [computed(p.product, 20)], T1)
     db.refresh(p)
     assert (p.proposed_qty, p.recalculated_qty) == (20, None)
+
+
+@pytest.mark.db
+def test_cutoff_change_moves_deadline_only_of_updated_proposals(db, product_factory, proposal_factory):
+    # 発注締め時刻を 20:00 → 19:00 に変えた後の再計算: 数量を更新する提案だけ期限が変わり、
+    # 修正あり・承認済み・承認取消後(修正ありと同じ)の提案は数量と同じく期限も変えない
+    old, new = jst(2026, 10, 16, 20), jst(2026, 10, 16, 19)
+    plain = proposal_factory(qty=20, deadline=old, product_offset=1)
+    adjusted = proposal_factory(qty=20, deadline=old, is_adjusted=True, product_offset=2)
+    approved = proposal_factory(qty=20, deadline=old, status="approved", product_offset=3)
+    apply_computed(db, dept(db, "VEG"), [computed(p.product, 26, deadline=new) for p in (plain, adjusted, approved)], T1)
+    for p in (plain, adjusted, approved):
+        db.refresh(p)
+    assert (plain.proposed_qty, plain.deadline) == (26, new)
+    assert (adjusted.proposed_qty, adjusted.recalculated_qty, adjusted.deadline) == (20, 26, old)
+    assert (approved.proposed_qty, approved.recalculated_qty, approved.deadline) == (20, 26, old)
 
 
 @pytest.mark.db

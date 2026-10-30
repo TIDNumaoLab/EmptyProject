@@ -34,7 +34,8 @@ function num(v: number | null, digits?: number): string {
 function weatherText(p: Proposal): string {
   if (p.weather_label === null) return "—";
   const parts = [p.weather_label];
-  if (p.temperature !== null) parts.push(`${p.temperature}℃`);
+  // 惣菜の時間帯の平均気温は割り切れない値になるため、予測値と同じく小数第1位で表示する
+  if (p.temperature !== null) parts.push(`${num(p.temperature, 1)}℃`);
   if (p.precipitation_probability !== null) parts.push(`${p.precipitation_probability}%`);
   return parts.join(" ");
 }
