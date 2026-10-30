@@ -44,6 +44,17 @@ test("shows basis of the proposal", () => {
   expect(within(row).getByText("ベースライン予測")).toBeInTheDocument();
 });
 
+test("temperature is shown to one decimal place", () => {
+  // 惣菜の時間帯の平均気温は割り切れない値になる(手動テスト ST-11 で見つかった表示)
+  renderRow(proposal({ weather_label: "快晴", temperature: 22.266666666666666, precipitation_probability: 1 }));
+  expect(within(screen.getByRole("row")).getByText("快晴 22.3℃ 1%")).toBeInTheDocument();
+});
+
+test("whole-number temperature also has one decimal place", () => {
+  renderRow(proposal({ weather_label: "快晴", temperature: 20, precipitation_probability: 0 }));
+  expect(within(screen.getByRole("row")).getByText("快晴 20.0℃ 0%")).toBeInTheDocument();
+});
+
 test("changing quantity requires reason before save", async () => {
   const h = renderRow(proposal());
   const user = userEvent.setup();
