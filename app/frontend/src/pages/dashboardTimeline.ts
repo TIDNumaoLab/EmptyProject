@@ -6,7 +6,8 @@ export interface Axis {
   endHour: number;
 }
 
-export type MarkState = "done" | "ready" | "pending" | "urgent";
+// missed: 締め済みで、未承認のまま期限切れになった提案がある(発注・製造の漏れ)
+export type MarkState = "done" | "missed" | "ready" | "pending" | "urgent";
 
 // 締めまでこの分数以内で未承認が残っていれば急ぎ(赤)にする
 export const URGENT_MINUTES = 60;
@@ -43,9 +44,9 @@ export function minutesLeft(deadline: string, now: Date): number {
   return Math.ceil((new Date(deadline).getTime() - now.getTime()) / 60000);
 }
 
-export function markState(d: Pick<DashboardDeadline, "pending" | "deadline">, now: Date): MarkState {
+export function markState(d: Pick<DashboardDeadline, "pending" | "expired" | "deadline">, now: Date): MarkState {
   const left = minutesLeft(d.deadline, now);
-  if (left <= 0) return "done";
+  if (left <= 0) return d.expired > 0 ? "missed" : "done";
   if (d.pending === 0) return "ready";
   return left <= URGENT_MINUTES ? "urgent" : "pending";
 }

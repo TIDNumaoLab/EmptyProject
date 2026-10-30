@@ -110,14 +110,34 @@ class JobLauncher:
         background_tasks.add_task(run_job, job_id, targets, self.session_factory, self.services, self.now_fn, self.clock)
 
 
+def covering_default_job(
+    db: Session, department: Department, now: datetime, settings: AppSettings, targets: FreshTargets,
+) -> ProposalJob | None:
+    """生鮮で対象日を指定したとき、指定の計算対象(商品×納品日)をすべて含む既定表示の実行中ジョブ。
+    今日の状況が始めた既定表示のジョブを、対象日を選んで開いた発注画面でも使い、同じ提案を二重に計算しない。"""
+    if is_production(department) or targets.explicit_date is None:
+        return None
+    default = FreshTargets(None)
+    job = running_job(db, department, job_key(department, now, settings, default), now)
+    if job is None:
+        return None
+    covered = wanted(db, department, now, settings, default)
+    requested = wanted(db, department, now, settings, targets)
+    return job if all(covered.get(k) == d for k, d in requested.items()) else None
+
+
 def start_auto_recalc(
     db: Session, department: Department, now: datetime, settings: AppSettings, services: ComputeServices,
     targets: FreshTargets, launcher: JobLauncher, background_tasks: BackgroundTasks,
 ) -> ProposalJob | None:
-    """最新性判定で必要ならジョブを開始し、そのジョブを返す。不要なら実行中のジョブ(無ければ None)を返す。"""
+    """最新性判定で必要ならジョブを開始し、そのジョブを返す(対象を含む既定表示のジョブが実行中ならそれを返す)。
+    不要なら実行中のジョブ(無ければ None)を返す。"""
     key = job_key(department, now, settings, targets)
     if not needs_auto_recalc(db, department, now, settings, services, targets):
         return running_job(db, department, key, now)
+    covering = covering_default_job(db, department, now, settings, targets)
+    if covering is not None:
+        return covering
     total = len(wanted(db, department, now, settings, targets))
     job, created = start_or_get_job(db, department, key, now, total)
     if created:

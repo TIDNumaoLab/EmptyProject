@@ -56,9 +56,16 @@ function screenLink(d: DashboardDepartment, g: DashboardDeadline): string {
 
 function stateText(state: MarkState, g: DashboardDeadline, now: Date): string {
   if (state === "done") return "締め済み";
+  if (state === "missed") return `締め済み 期限切れ${g.expired}件`;
   if (state === "ready") return "全件承認済み";
   const text = `未承認${g.pending}件`;
   return state === "urgent" ? `${text} ${formatRemaining(minutesLeft(g.deadline, now))}` : text;
+}
+
+// 印の中: 未承認の件数。締め済み・全件承認済みは ✓、期限切れがあれば「!」と期限切れの件数
+function pinText(state: MarkState, g: DashboardDeadline): string {
+  if (state === "missed") return `!${g.expired}`;
+  return state === "done" || state === "ready" ? "✓" : String(g.pending);
 }
 
 const LANE_NOTE = { order: "発注締め", production: "今日の製造開始" } as const;
@@ -71,7 +78,7 @@ function Timeline({ data, axis }: { data: Dashboard; axis: Axis }) {
   return (
     <section className={styles.day} aria-labelledby="day-h">
       <h2 id="day-h">今日の締め時刻</h2>
-      <p className={styles.lead}>印の中の数字は未承認の件数です。印を押すとその部門の画面を開きます。</p>
+      <p className={styles.lead}>印の中の数字は未承認の件数です(「!」は未承認のまま締めを過ぎた件数)。印を押すとその部門の画面を開きます。</p>
       <div className={styles.axis} aria-hidden="true">
         <div />
         <div className={styles.track}>
@@ -106,10 +113,11 @@ function Timeline({ data, axis }: { data: Dashboard; axis: Axis }) {
                       style={{ left: `${positions[i]}%` }}
                       aria-label={`${d.department_name} ${targetLabel(g)} ${kind} ${formatTime(g.deadline)} ${stateText(state, g, now)}`}
                     >
-                      <span className={styles.pin}>{state === "done" || state === "ready" ? "✓" : g.pending}</span>
+                      <span className={styles.pin}>{pinText(state, g)}</span>
                       <span className={styles.t}>
                         {label}
                         {state === "urgent" && ` ${formatRemaining(minutesLeft(g.deadline, now))}`}
+                        {state === "missed" && ` 期限切れ${g.expired}件`}
                       </span>
                     </Link>
                   );
@@ -126,6 +134,7 @@ function Timeline({ data, axis }: { data: Dashboard; axis: Axis }) {
       </div>
       <div className={styles.legend} aria-hidden="true">
         <span className={styles.lDone}>締め済み</span>
+        <span className={styles.lMissed}>期限切れあり</span>
         <span className={styles.lReady}>全件承認済み</span>
         <span className={styles.lPending}>未承認あり</span>
         <span className={styles.lUrgent}>締めまで1時間以内</span>

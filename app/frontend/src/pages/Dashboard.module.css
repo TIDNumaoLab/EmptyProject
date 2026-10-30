@@ -168,6 +168,16 @@
   color: #a9b6be;
 }
 
+.missed .pin {
+  border-color: #b4321f;
+  color: #b4321f;
+  background: #fbe9e6;
+}
+
+.missed .t {
+  color: #b4321f;
+}
+
 .ready .pin {
   border-color: #2f7a4f;
   color: #2f7a4f;
@@ -257,6 +267,11 @@
 
 .lPending::before {
   background: #2e6e94;
+}
+
+.lMissed::before {
+  border-color: #b4321f !important;
+  background: #fbe9e6;
 }
 
 .lUrgent::before {

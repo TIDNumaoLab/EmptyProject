@@ -28,12 +28,14 @@ test("position is the share of the axis in JST", () => {
 });
 
 test("mark state by deadline, pending count and remaining time", () => {
-  const base = { pending: 2, deadline: "2026-10-16T15:00:00+09:00" };
+  const base = { pending: 2, expired: 0, deadline: "2026-10-16T15:00:00+09:00" };
   expect(markState(base, now)).toBe("urgent");
   expect(markState({ ...base, deadline: "2026-10-16T15:21:00+09:00" }, now)).toBe("pending");
   expect(markState({ ...base, pending: 0 }, now)).toBe("ready");
   // 期限ちょうどは締め済み
   expect(markState({ ...base, deadline: "2026-10-16T14:20:00+09:00" }, now)).toBe("done");
+  // 未承認のまま締めを過ぎた提案があれば、締め済み(✓)にしない
+  expect(markState({ ...base, expired: 1, deadline: "2026-10-16T14:20:00+09:00" }, now)).toBe("missed");
 });
 
 test("remaining time text", () => {

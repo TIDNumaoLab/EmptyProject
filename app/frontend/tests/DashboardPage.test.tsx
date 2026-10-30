@@ -77,8 +77,19 @@ test("timeline marks link to the department screen with the target date", async 
   expect(within(veg).getByText("2")).toBeInTheDocument();
   const deli = screen.getByRole("link", { name: "惣菜 10/16 10時の部 製造開始 09:00 締め済み" });
   expect(deli).toHaveAttribute("href", "/production?department=DELI&target_date=2026-10-16");
+  expect(within(deli).getByText("✓")).toBeInTheDocument();
   // 翌日の期限は時間軸に出さない(下の一覧にだけ出す)
   expect(screen.queryByRole("link", { name: /10\/17 10時の部 製造開始/ })).not.toBeInTheDocument();
+});
+
+test("a closed deadline with expired proposals is not shown as done", async () => {
+  vi.mocked(dashboardApi.getDashboard).mockResolvedValue(
+    dashboard({ deadlines: [deadline({ deadline: "2026-10-16T09:00:00+09:00", target_date: "2026-10-16", approved: 3, expired: 2 })] }),
+  );
+  await renderPage(<DashboardPage />, manager(), "今日の状況");
+  const veg = await screen.findByRole("link", { name: "青果 10/16 納品分 発注締め 09:00 締め済み 期限切れ2件" });
+  expect(within(veg).getByText("!2")).toBeInTheDocument();
+  expect(within(veg).queryByText("✓")).not.toBeInTheDocument();
 });
 
 test("lists pending groups by deadline with warnings and bulk count", async () => {

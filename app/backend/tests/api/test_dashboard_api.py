@@ -72,6 +72,25 @@ def test_running_job_is_returned_not_duplicated(client, login, user_factory, veg
 
 
 @pytest.mark.db
+def test_fresh_list_with_target_date_shares_running_default_job(client, login, user_factory, veg_setup, test_services,
+                                                                db, fixed_now):
+    """今日の状況が始めた既定表示のジョブを、対象日を選んで開いた発注画面でも返す(二重に計算しない)。"""
+    from smdx_api.proposals.jobs import JobKey, start_or_get_job
+
+    # 10/16 15:00(締め 20:00 より前)。VEG-001 は LT1 なので既定表示の納品日は 10/17
+    running, _ = start_or_get_job(db, dept(db, "VEG"), JobKey("default", date(2026, 10, 16)), fixed_now.value, total=1)
+    login(client, user_factory(departments=("VEG",)))
+    res = client.get("/api/proposals", params={"department_code": "VEG", "target_date": "2026-10-17"})
+    assert res.status_code == 200, res.text
+    assert res.json()["job"]["id"] == running.id
+    assert job_count(db) == 1
+    # 既定表示のジョブが計算しない納品日(10/18)を指定したときは、その日のジョブを始める
+    res = client.get("/api/proposals", params={"department_code": "VEG", "target_date": "2026-10-18"})
+    assert res.json()["job"]["id"] != running.id
+    assert job_count(db) == 2
+
+
+@pytest.mark.db
 def test_deadlines_grouped_and_counted(client, login, user_factory, fixed_now, test_services, db, product_factory,
                                        proposal_factory):
     fixed_now.set(jst(2026, 10, 16, 14, 20))
